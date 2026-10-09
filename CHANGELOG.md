@@ -1,8 +1,8 @@
 # Changelog
 
-## 3.0.0 (unveröffentlicht)
+## 3.0.0 (2026-10-09)
 
-Das AddOn zieht zu [Friends Of REDAXO](https://github.com/FriendsOfREDAXO/filepond_uploader). Autoren: Friends Of REDAXO, KLXM Crossmedia GmbH, Thomas Skerbis.
+Das AddOn ist zu [Friends Of REDAXO](https://github.com/FriendsOfREDAXO/filepond_uploader) umgezogen (vorher KLXM/filepond_uploader, alte Links leiten weiter). Autoren: Friends Of REDAXO, KLXM Crossmedia GmbH, Thomas Skerbis.
 
 ### ⚠️ Breaking Changes
 - **PHP 8.4** ist Mindestvoraussetzung.
