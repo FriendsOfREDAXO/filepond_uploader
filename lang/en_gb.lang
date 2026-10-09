@@ -179,6 +179,7 @@ filepond_maintenance_cleanup_button = Delete temporary files now
 filepond_maintenance_cleanup_notice = Deletes old temporary files and chunks that are no longer needed
 filepond_maintenance_cleanup_running = Deleting temporary files...
 filepond_maintenance_cleanup_error = Error deleting temporary files
+filepond_maintenance_cleanup_result = Cleaned up: removed {0} chunk folders and {1} temporary files. Leftovers of aborted uploads are also removed automatically after 6 hours.
 
 # General Settings
 filepond_general_settings = General Settings

@@ -26,10 +26,10 @@ class AltChecker extends rex_api_function
         // Berechtigung prüfen
         $user = rex::getUser();
         if (!rex::isBackend() || null === $user || (!$user->isAdmin() && !$user->hasPerm('filepond_uploader[alt_checker]'))) {
-            $this->sendJson(['error' => 'Zugriff verweigert']);
+            $this->sendJson(['error' => rex_i18n::rawMsg('no_perm')], rex_response::HTTP_FORBIDDEN);
         }
         if (!Helper::isValidCsrfToken()) {
-            $this->sendJson(['error' => 'Invalid CSRF token']);
+            $this->sendJson(['error' => 'Invalid CSRF token'], rex_response::HTTP_FORBIDDEN);
         }
 
         $action = rex_request('action', 'string');
@@ -59,10 +59,10 @@ class AltChecker extends rex_api_function
     /**
      * @param array<string, mixed> $data
      */
-    private function sendJson(array $data): never
+    private function sendJson(array $data, string $status = rex_response::HTTP_OK): never
     {
         rex_response::cleanOutputBuffers();
-        rex_response::setStatus(rex_response::HTTP_OK);
+        rex_response::setStatus($status);
         rex_response::sendJson($data);
         exit;
     }

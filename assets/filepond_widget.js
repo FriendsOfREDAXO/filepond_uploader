@@ -1416,6 +1416,9 @@
                             // Kurze Pause nach erfolgreicher Vorbereitung, damit Metadaten gespeichert werden können
                             await new Promise(resolve => setTimeout(resolve, 500));
                         } catch (err) {
+                            if (err.name === 'AbortError') {
+                                throw err;
+                            }
                             prepareAttempts++;
                             console.warn(`Preparation attempt ${prepareAttempts} failed: ${err.message}`);
 
@@ -1482,22 +1485,14 @@
                                     throw new Error(`Unexpected response: ${JSON.stringify(result)}`);
                                 }
                             } catch (err) {
-                                console.error(`Chunk ${chunkIndex} upload failed: ${err.message}`);
-                                reject(err);  // Fehler beim Hochladen des Chunks
+                                reject(err);
                             }
                         });
                     };
 
                     // Sequentielles Hochladen der Chunks mit Promises
                     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-                        try {
-                            await uploadChunk(chunkIndex);
-                        } catch (err) {
-                            console.error(`Upload failed at chunk ${chunkIndex}: ${err.message}`);
-                            error(`Upload failed: ${err.message}`);
-                            abort();
-                            return;
-                        }
+                        await uploadChunk(chunkIndex);
                     }
 
                     // Wenn alle Chunks erfolgreich hochgeladen wurden
@@ -1547,20 +1542,20 @@
                     }
 
                 } catch (err) {
-                    if (err.name === 'AbortError') {
-                        abort();
-                    } else {
+                    // Bereits übertragene Chunks serverseitig verwerfen (nur eigene, siehe func=cancel)
+                    if (fileId) {
+                        const cancelData = new FormData();
+                        cancelData.append('rex-api-call', 'filepond_uploader');
+                        appendSecurity(cancelData);
+                        cancelData.append('func', 'cancel');
+                        cancelData.append('fileId', fileId);
+                        fetch(basePath, { method: 'POST', body: cancelData, headers: { 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
+                    }
+                    if (err.name !== 'AbortError') {
                         console.error('Chunk upload error:', err);
                         error('Upload failed: ' + err.message);
                     }
                 }
-
-                return {
-                    abort: () => {
-                        abortController.abort();
-                        abort();
-                    }
-                };
             };
 
             // Initialize FilePond
@@ -1910,7 +1905,8 @@
                         e.preventDefault();
                         
                         if (pond && typeof pond.processFiles === 'function') {
-                            pond.processFiles();
+                            // Fehler und Abbrüche zeigt FilePond am Eintrag an
+                            pond.processFiles().catch(() => {});
                         }
                     });
 

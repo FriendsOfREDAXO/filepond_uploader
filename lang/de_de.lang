@@ -170,6 +170,7 @@ filepond_maintenance_cleanup_button = Temporäre Dateien jetzt löschen
 filepond_maintenance_cleanup_notice = Löscht alte temporäre Dateien und Chunks, die nicht mehr benötigt werden
 filepond_maintenance_cleanup_running = Lösche temporäre Dateien...
 filepond_maintenance_cleanup_error = Fehler beim Löschen der temporären Dateien
+filepond_maintenance_cleanup_result = Aufgeräumt: {0} Chunk-Ordner und {1} temporäre Dateien entfernt. Reste abgebrochener Uploads werden zusätzlich automatisch nach 6 Stunden gelöscht.
 
 # Auto Cleanup
 filepond_auto_cleanup = Automatisches Löschen ungenutzter Medien

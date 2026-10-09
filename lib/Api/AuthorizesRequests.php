@@ -106,21 +106,38 @@ trait AuthorizesRequests
     /** Merkt sich hochgeladene Dateien der Session, nur diese darf der Aufrufer wieder löschen. */
     protected function rememberUpload(string $filename): void
     {
-        if (PHP_SESSION_ACTIVE !== session_status()) {
-            return;
-        }
-
-        $uploads = rex_session('filepond_uploads', 'array', []);
-        $uploads[] = $filename;
-        rex_set_session('filepond_uploads', array_slice(array_values(array_unique($uploads)), -500));
+        $this->rememberInSession('filepond_uploads', $filename, 500);
     }
 
     protected function isOwnUpload(string $filename): bool
     {
+        return $this->isInSession('filepond_uploads', $filename);
+    }
+
+    /** Vorbereitete Uploads (fileId) der Session, nur diese darf der Aufrufer abbrechen. */
+    protected function rememberPrepared(string $fileId): void
+    {
+        $this->rememberInSession('filepond_prepared', $fileId, 100);
+    }
+
+    protected function isOwnPrepared(string $fileId): bool
+    {
+        return $this->isInSession('filepond_prepared', $fileId);
+    }
+
+    private function rememberInSession(string $key, string $value, int $limit): void
+    {
         if (PHP_SESSION_ACTIVE !== session_status()) {
-            return false;
+            return;
         }
 
-        return in_array($filename, rex_session('filepond_uploads', 'array', []), true);
+        $values = rex_session($key, 'array', []);
+        $values[] = $value;
+        rex_set_session($key, array_slice(array_values(array_unique($values)), -$limit));
+    }
+
+    private function isInSession(string $key, string $value): bool
+    {
+        return PHP_SESSION_ACTIVE === session_status() && in_array($value, rex_session($key, 'array', []), true);
     }
 }

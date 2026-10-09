@@ -104,6 +104,7 @@ class Upload extends rex_api_function
                 'chunk-upload' => $this->handleChunkUpload(),
                 'finalize-upload' => $this->sendResponse($this->handleFinalizeUpload($this->checkCategory($categoryId))),
                 'delete' => $this->handleDelete(),
+                'cancel' => $this->handleCancel(),
                 'cleanup' => $this->sendResponse($this->handleCleanup()),
                 default => throw new rex_api_exception('Invalid function'),
             };
@@ -136,7 +137,10 @@ class Upload extends rex_api_function
         // Diese Methode wird aufgerufen, bevor ein Upload beginnt
         // Hier werden Metadaten gespeichert und ein eindeutiger fileId zurückgegeben
 
+        self::collectGarbage();
+
         $fileId = uniqid('filepond_', true);
+        $this->rememberPrepared($fileId);
         $metadata = json_decode(rex_post('metadata', 'string', '{}'), true);
         $fileName = rex_request('fileName', 'string', '');
         $fieldName = rex_request('fieldName', 'string', 'filepond');
@@ -233,30 +237,17 @@ class Upload extends rex_api_function
     }
 
     /**
-     * fileId aus dem Request: nur das Format aus handlePrepare() ist erlaubt, da es in Dateipfade eingeht.
+     * fileId aus dem Request: nur das Format aus handlePrepare() (geht in Dateipfade ein) und nur
+     * Uploads, die diese Session vorbereitet hat. API-Token-Clients haben keine Session.
      */
     protected function requireFileId(): string
     {
         $fileId = rex_request('fileId', 'string', '');
-        if (!Helper::isValidFileId($fileId)) {
+        if (!Helper::isValidFileId($fileId) || ('token' !== $this->caller && !$this->isOwnPrepared($fileId))) {
             throw new rex_api_exception('Invalid fileId');
         }
 
         return $fileId;
-    }
-
-    protected function cleanupChunks(string $directory): void
-    {
-        if (is_dir($directory)) {
-            $globResult = glob($directory . '/*');
-            $files = false !== $globResult ? $globResult : [];
-            foreach ($files as $file) {
-                if (is_file($file)) {
-                    rex_file::delete($file);
-                }
-            }
-            rex_dir::delete($directory);
-        }
     }
 
     /**
@@ -282,7 +273,7 @@ class Upload extends rex_api_function
 
         // Metadaten aus der Vorbereitungsphase laden
         $metadata = [];
-        if (Helper::isValidFileId($fileId)) {
+        if (Helper::isValidFileId($fileId) && ('token' === $this->caller || $this->isOwnPrepared($fileId))) {
             $metaFile = $this->metadataDir . '/' . $fileId . '.json';
             if (file_exists($metaFile)) {
                 $fileContent = rex_file::get($metaFile);
@@ -792,147 +783,81 @@ class Upload extends rex_api_function
     }
 
     /**
-     * @return array<string, mixed>
+     * Verwirft einen abgebrochenen Upload der eigenen Session (Chunks und Metadaten).
+     *
+     * @return never
+     */
+    protected function handleCancel(): void
+    {
+        $fileId = $this->requireFileId();
+        rex_dir::delete($this->chunksDir . '/' . $fileId);
+        rex_file::delete($this->metadataDir . '/' . $fileId . '.json');
+
+        $this->sendResponse(['status' => 'success']);
+    }
+
+    /**
+     * Aufräumen auf Admin-Anforderung (Einstellungen → System).
+     *
+     * @return array{status: string, message: string}
      */
     public function handleCleanup(): array
     {
-        // Nur Backend-Benutzer mit Admin-Rechten dürfen aufräumen
         $user = rex_backend_login::createUser();
         if (null === $user || !$user->isAdmin()) {
             throw new rex_api_exception('Unauthorized: Admin privileges required');
         }
 
-        // Debug-Logging NICHT temporär aktivieren, sondern nur verwenden, wenn es global aktiviert ist
-        $this->log('info', 'Admin-triggered cleanup of temporary files');
+        $removed = self::removeStaleTempFiles(3600);
 
-        $cleanedChunks = 0;
-        $cleanedMetadata = 0;
-        $errors = [];
-        $debugInfo = [];
-
-        // Alte Chunk-Verzeichnisse löschen (älter als 1h statt 24h)
-        $expireTime = time() - (60 * 60); // 1 Stunde
-        $chunksDir = $this->chunksDir;
-
-        $debugInfo['chunks_dir'] = $chunksDir;
-        $debugInfo['metadata_dir'] = $this->metadataDir;
-        $debugInfo['expire_time'] = date('Y-m-d H:i:s', $expireTime);
-        $debugInfo['current_time'] = date('Y-m-d H:i:s');
-
-        if (is_dir($chunksDir)) {
-            $globResult = glob($chunksDir . '/*', GLOB_ONLYDIR);
-            $chunkDirs = false !== $globResult ? $globResult : [];
-            $debugInfo['found_chunk_dirs'] = count($chunkDirs);
-
-            foreach ($chunkDirs as $dir) {
-                $dirTime = filemtime($dir);
-                if (false === $dirTime) {
-                    continue;
-                }
-                $dirAge = time() - $dirTime;
-                $debugInfo['chunk_dirs'][] = [
-                    'path' => $dir,
-                    'modified' => date('Y-m-d H:i:s', $dirTime),
-                    'age_seconds' => $dirAge,
-                    'is_expired' => ($dirTime < $expireTime),
-                ];
-
-                if ($dirTime < $expireTime) {
-                    try {
-                        $this->log('info', "Cleaning up chunk directory: $dir (modified: " . date('Y-m-d H:i:s', $dirTime) . ')');
-                        $this->cleanupChunks($dir);
-                        ++$cleanedChunks;
-                    } catch (Exception $e) {
-                        $errors[] = "Failed to clean chunk directory $dir: " . $e->getMessage();
-                        $this->log('error', "Failed to clean chunk directory $dir: " . $e->getMessage());
-                    }
-                }
-            }
-        } else {
-            $errors[] = "Chunks directory does not exist: $chunksDir";
-            $this->log('error', "Chunks directory does not exist: $chunksDir");
-
-            // Versuchen, das Verzeichnis zu erstellen
-            try {
-                rex_dir::create($chunksDir);
-                $this->log('info', "Created chunks directory: $chunksDir");
-            } catch (Exception $e) {
-                $errors[] = 'Failed to create chunks directory: ' . $e->getMessage();
-                $this->log('error', 'Failed to create chunks directory: ' . $e->getMessage());
-            }
-        }
-
-        // Alte Metadaten-Dateien löschen (älter als 24h)
-        $metadataDir = $this->metadataDir;
-
-        if (is_dir($metadataDir)) {
-            $globResult = glob($metadataDir . '/*.json');
-            $metaFiles = false !== $globResult ? $globResult : [];
-            $debugInfo['found_meta_files'] = count($metaFiles);
-
-            foreach ($metaFiles as $file) {
-                $fileTime = filemtime($file);
-                if (false === $fileTime) {
-                    continue;
-                }
-                $fileAge = time() - $fileTime;
-                $debugInfo['meta_files'][] = [
-                    'path' => $file,
-                    'modified' => date('Y-m-d H:i:s', $fileTime),
-                    'age_seconds' => $fileAge,
-                    'is_expired' => ($fileTime < $expireTime),
-                ];
-
-                if ($fileTime < $expireTime) {
-                    try {
-                        $this->log('info', "Deleting metadata file: $file (modified: " . date('Y-m-d H:i:s', $fileTime) . ')');
-                        if (!rex_file::delete($file)) {
-                            $errors[] = "Failed to delete metadata file: $file";
-                            $this->log('error', "Failed to delete metadata file: $file");
-                        } else {
-                            ++$cleanedMetadata;
-                        }
-                    } catch (Exception $e) {
-                        $errors[] = "Failed to delete metadata file $file: " . $e->getMessage();
-                        $this->log('error', "Failed to delete metadata file $file: " . $e->getMessage());
-                    }
-                }
-            }
-        } else {
-            $errors[] = "Metadata directory does not exist: $metadataDir";
-            $this->log('error', "Metadata directory does not exist: $metadataDir");
-
-            // Versuchen, das Verzeichnis zu erstellen
-            try {
-                rex_dir::create($metadataDir);
-                $this->log('info', "Created metadata directory: $metadataDir");
-            } catch (Exception $e) {
-                $errors[] = 'Failed to create metadata directory: ' . $e->getMessage();
-                $this->log('error', 'Failed to create metadata directory: ' . $e->getMessage());
-            }
-        }
-
-        // Debug-Logging zurücksetzen (falls aktiviert)
-        $this->debug = false;
-
-        // Antwort mit detaillierten Informationen
-        $response = [
-            'status' => [] === $errors ? 'success' : 'partial_success',
-            'message' => "Cleanup completed. Removed $cleanedChunks chunk folders and $cleanedMetadata metadata files.",
+        return [
+            'status' => 'success',
+            'message' => rex_i18n::rawMsg('filepond_maintenance_cleanup_result', $removed['chunks'], $removed['metadata'] + $removed['parts']),
         ];
+    }
 
-        if ([] !== $errors) {
-            $response['errors'] = $errors;
-            $response['message'] .= ' Encountered ' . count($errors) . ' errors.';
+    /**
+     * Entfernt Reste abgebrochener Uploads (Chunk-Ordner, Metadaten, .part-Dateien), die älter als
+     * $maxAge Sekunden sind. Laufende Chunk-Uploads aktualisieren die Ordnerzeit mit jedem Chunk.
+     *
+     * @return array{chunks: int, metadata: int, parts: int}
+     */
+    public static function removeStaleTempFiles(int $maxAge): array
+    {
+        $expire = time() - $maxAge;
+        $base = rex_path::addonData('filepond_uploader', 'upload');
+        $isStale = static fn (string $path): bool => false !== ($mtime = @filemtime($path)) && $mtime < $expire;
+        $removed = ['chunks' => 0, 'metadata' => 0, 'parts' => 0];
+
+        foreach (glob($base . '/chunks/filepond_*', GLOB_ONLYDIR) ?: [] as $dir) {
+            if ($isStale($dir) && rex_dir::delete($dir)) {
+                ++$removed['chunks'];
+            }
+        }
+        foreach (glob($base . '/metadata/filepond_*.json') ?: [] as $file) {
+            if ($isStale($file) && rex_file::delete($file)) {
+                ++$removed['metadata'];
+            }
+        }
+        foreach (glob($base . '/filepond_*.part') ?: [] as $file) {
+            if ($isStale($file) && rex_file::delete($file)) {
+                ++$removed['parts'];
+            }
         }
 
-        // Debug-Info nur im Backend anzeigen
-        $currentUser = rex::getUser();
-        if (rex::isBackend() && null !== $currentUser && $currentUser->isAdmin()) {
-            $response['debug'] = $debugInfo;
-        }
+        return $removed;
+    }
 
-        return $response;
+    /** Automatisches Aufräumen, höchstens einmal pro Stunde; großzügige Frist für lange Uploads. */
+    protected static function collectGarbage(): void
+    {
+        $marker = rex_path::addonData('filepond_uploader', 'upload/.last-cleanup');
+        $last = @filemtime($marker);
+        if (false !== $last && $last > time() - 3600) {
+            return;
+        }
+        rex_file::put($marker, '');
+        self::removeStaleTempFiles(6 * 3600);
     }
 
     /**
@@ -994,7 +919,7 @@ class Upload extends rex_api_function
                 'originalname' => (string) ($metaData['originalFileName'] ?? $metaData['fileName']),
             ];
         } finally {
-            $this->cleanupChunks($chunkDir);
+            rex_dir::delete($chunkDir);
             rex_file::delete($metaFile);
             rex_file::delete($tmpFile);
         }

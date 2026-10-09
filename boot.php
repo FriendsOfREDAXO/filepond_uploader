@@ -47,6 +47,8 @@ rex_yform::addTemplatePath($this->getPath('ytemplates'));
 rex_extension::register('MEDIA_IS_IN_USE', [MediaCleanup::class, 'isMediaInUse']);
 
 if (rex::isBackend()) {
+    // Alt-Checker-Seite existiert nur im Medienpool, ihr Recht wird daher nicht implizit registriert
+    rex_perm::register('filepond_uploader[alt_checker]');
     rex_perm::register('filepond_uploader[mediaplace_upload]', rex_i18n::msg('filepond_perm_mediaplace_upload'));
     rex_perm::register(YcomAuthSettings::PERM, rex_i18n::msg('filepond_perm_ycom_media_auth'));
 }
