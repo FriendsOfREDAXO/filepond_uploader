@@ -6,6 +6,7 @@ use FriendsOfRedaxo\FilePondUploader\Config;
 use FriendsOfRedaxo\FilePondUploader\Helper;
 use FriendsOfRedaxo\FilePondUploader\MediaCleanup;
 use FriendsOfRedaxo\FilePondUploader\MetadataWriter;
+use GdImage;
 use Throwable;
 use rex;
 use Exception;
@@ -422,7 +423,7 @@ class Upload extends rex_api_function
 
         // Bildoptimierung für unterstützte Formate (keine GIFs)
         // Nur wenn serverseitige Bildverarbeitung aktiviert ist
-        $serverImageProcessing = ('|1|' === (string) rex_config::get('filepond_uploader', 'server_image_processing', ''));
+        $serverImageProcessing = Config::isEnabled('server_image_processing');
         if ($serverImageProcessing && str_starts_with($file['type'], 'image/') && 'image/gif' !== $file['type']) {
             $this->processImage($file['tmp_name']);
         }
@@ -583,111 +584,82 @@ class Upload extends rex_api_function
     }
 
     /**
-     * Process and optimize an image (resize and EXIF orientation fix).
-     *
-     * @param string $tmpFile Path to the temporary image file
-     * @return void
+     * Serverseitige Bildoptimierung: auf max_pixel verkleinern und EXIF-Orientierung einrechnen.
+     * Bilder ohne nötige Änderung bleiben unangetastet (keine erneute Kompression).
      */
-    protected function processImage($tmpFile)
+    protected function processImage(string $tmpFile): void
     {
-        $maxPixel = (int) rex_config::get('filepond_uploader', 'max_pixel', 1200);
-        $quality = (int) rex_config::get('filepond_uploader', 'image_quality', 90);
-        $fixExifOrientation = (bool) rex_config::get('filepond_uploader', 'fix_exif_orientation', false);
+        $maxPixel = Config::int('max_pixel', 2100);
+        $quality = max(10, min(100, Config::int('image_quality', 90)));
+        $fixOrientation = Config::isEnabled('fix_exif_orientation');
 
-        $imageInfo = getimagesize($tmpFile);
+        $imageInfo = @getimagesize($tmpFile);
         if (false === $imageInfo) {
             return;
         }
 
         [$width, $height, $type] = $imageInfo;
-
-        // Nur unterstützte Bildformate verarbeiten
         if (!in_array($type, [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP], true)) {
             return;
         }
 
-        // Prüfen ob Resize nötig ist
-        $needsResize = ($width > $maxPixel || $height > $maxPixel);
-
-        // Wenn kein Resize nötig und keine EXIF-Korrektur, abbrechen
-        if (!$needsResize && !$fixExifOrientation) {
+        $needsResize = $width > $maxPixel || $height > $maxPixel;
+        $orientation = $fixOrientation ? $this->exifOrientation($tmpFile, $type) : 1;
+        if (!$needsResize && 1 === $orientation) {
             return;
         }
 
-        // Prüfen ob ImageMagick verfügbar ist
-        $convertBin = $this->findImageMagickBinary();
+        $convertBin = self::findImageMagickBinary();
         if (null !== $convertBin) {
-            $this->processImageWithImageMagick($tmpFile, $convertBin, $maxPixel, $quality, $fixExifOrientation, $needsResize, $type);
+            $this->processImageWithImageMagick($tmpFile, $convertBin, $maxPixel, $quality, $needsResize, $type);
+
             return;
         }
 
-        // Fallback auf GD
-        $this->processImageWithGD($tmpFile, $maxPixel, $quality, $fixExifOrientation, $needsResize, $type, $width, $height);
+        $this->processImageWithGD($tmpFile, $maxPixel, $quality, $orientation, $type);
     }
 
-    /**
-     * Find ImageMagick convert binary.
-     *
-     * @return string|null Path to convert binary or null if not found
-     */
-    protected function findImageMagickBinary()
+    /** ImageMagick-Binary, einmal pro Request ermittelt; null ohne exec() oder ImageMagick. */
+    protected static function findImageMagickBinary(): ?string
     {
-        // Versuche verschiedene mögliche Pfade
-        $possiblePaths = [
-            '/usr/bin/convert',
-            '/usr/local/bin/convert',
-            '/opt/homebrew/bin/convert',
-            'convert', // PATH
-        ];
+        static $binary = false;
+        if (false !== $binary) {
+            return $binary;
+        }
 
-        foreach ($possiblePaths as $path) {
+        $binary = null;
+        if (!function_exists('exec')) {
+            return null;
+        }
+
+        foreach (['magick', '/usr/bin/convert', '/usr/local/bin/convert', '/opt/homebrew/bin/convert', 'convert'] as $path) {
             $output = [];
-            $returnCode = 0;
-            @exec($path . ' -version 2>&1', $output, $returnCode);
-            if (0 === $returnCode && [] !== $output) {
-                $versionString = implode(' ', $output);
-                if (str_contains($versionString, 'ImageMagick')) {
-                    $this->log('info', "Found ImageMagick at: $path");
-                    return $path;
-                }
+            $returnCode = 1;
+            @exec(escapeshellcmd($path) . ' -version 2>&1', $output, $returnCode);
+            if (0 === $returnCode && str_contains(implode(' ', $output), 'ImageMagick')) {
+                $binary = $path;
+                break;
             }
         }
 
-        $this->log('warning', 'ImageMagick not found, falling back to GD');
-        return null;
+        return $binary;
     }
 
     /**
-     * Process image with ImageMagick CLI (resize and EXIF orientation fix).
-     *
-     * @return void
+     * Verkleinern und Orientierung einrechnen. Der Farbprofil (ICC) bleibt erhalten, übrige
+     * Metadaten (EXIF inkl. GPS) werden entfernt; die Orientierung ist danach eingerechnet.
      */
-    protected function processImageWithImageMagick(string $tmpFile, string $convertBin, int $maxPixel, int $quality, bool $fixExifOrientation, bool $needsResize, int $type): void
+    protected function processImageWithImageMagick(string $tmpFile, string $convertBin, int $maxPixel, int $quality, bool $needsResize, int $type): void
     {
-        // ImageMagick Befehl zusammenbauen
-        $cmd = escapeshellcmd($convertBin);
-        $cmd .= ' ' . escapeshellarg($tmpFile);
-
-        // EXIF-Orientierung korrigieren
-        if ($fixExifOrientation) {
-            $cmd .= ' -auto-orient';
-        }
-
-        // Resize wenn nötig (mit Seitenverhältnis beibehalten)
+        $cmd = escapeshellcmd($convertBin) . ' ' . escapeshellarg($tmpFile) . ' -auto-orient';
         if ($needsResize) {
             $cmd .= ' -resize ' . escapeshellarg($maxPixel . 'x' . $maxPixel . '>');
         }
-
-        // Qualität setzen
-        $cmd .= ' -quality ' . $quality;
-
-        // Strip metadata für kleinere Dateien
-        $cmd .= ' -strip';
-
-        // Ausgabedatei (überschreibt Original)
-        $cmd .= ' ' . escapeshellarg($tmpFile);
-
-        $this->log('info', "Executing ImageMagick: $cmd");
+        // -quality bedeutet bei PNG Kompressionsstufe/Filter, nicht Qualität
+        if (IMAGETYPE_PNG !== $type) {
+            $cmd .= ' -quality ' . $quality;
+        }
+        $cmd .= ' +profile ' . escapeshellarg('!icc,*') . ' ' . escapeshellarg($tmpFile);
 
         $output = [];
         $returnCode = 0;
@@ -698,230 +670,96 @@ class Upload extends rex_api_function
         }
     }
 
-    /**
-     * Process image with GD (Fallback, resize and EXIF orientation fix).
-     *
-     * @return void
-     */
-    protected function processImageWithGD(string $tmpFile, int $maxPixel, int $quality, bool $fixExifOrientation, bool $needsResize, int $type, int $width, int $height): void
+    /** GD-Fallback: Orientierung und Verkleinerung im Speicher, einmal speichern. */
+    protected function processImageWithGD(string $tmpFile, int $maxPixel, int $quality, int $orientation, int $type): void
     {
-        // Fix EXIF orientation first, before any other processing
-        if ($fixExifOrientation) {
-            $this->fixExifOrientation($tmpFile, $type);
-            // Re-read image info after orientation fix
-            $imageInfo = getimagesize($tmpFile);
-            if (false === $imageInfo) {
-                $this->log('error', 'Failed to read image info after EXIF orientation fix');
-                return;
-            }
-            [$width, $height, $type] = $imageInfo;
-        }
-
-        // Wenn kein Resize nötig, sind wir fertig (EXIF wurde bereits korrigiert)
-        if (!$needsResize) {
+        $image = match ($type) {
+            IMAGETYPE_JPEG => @imagecreatefromjpeg($tmpFile),
+            IMAGETYPE_PNG => @imagecreatefrompng($tmpFile),
+            IMAGETYPE_WEBP => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($tmpFile) : false,
+            default => false,
+        };
+        if (false === $image) {
             return;
         }
 
-        // Neue Dimensionen berechnen
-        $newWidth = $width;
-        $newHeight = $height;
-        $ratio = $width / $height;
-        if ($width > $height) {
-            $newWidth = min($width, $maxPixel);
-            $newHeight = max(1, (int) floor($newWidth / $ratio));
-        } else {
-            $newHeight = min($height, $maxPixel);
-            $newWidth = max(1, (int) floor($newHeight * $ratio));
+        $image = $this->applyOrientation($image, $orientation);
+        if (null === $image) {
+            return;
         }
 
-        // Create source image based on type
-        $srcImage = null;
-        switch ($type) {
-            case IMAGETYPE_JPEG:
-                $srcImage = imagecreatefromjpeg($tmpFile);
-                break;
-            case IMAGETYPE_PNG:
-                $srcImage = imagecreatefrompng($tmpFile);
-                break;
-            case IMAGETYPE_WEBP:
-                if (function_exists('imagecreatefromwebp')) {
-                    $srcImage = imagecreatefromwebp($tmpFile);
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $hasAlpha = IMAGETYPE_JPEG !== $type;
+
+        if ($width > $maxPixel || $height > $maxPixel) {
+            $scale = $maxPixel / max($width, $height);
+            $newWidth = max(1, (int) round($width * $scale));
+            $newHeight = max(1, (int) round($height * $scale));
+
+            $resized = imagecreatetruecolor($newWidth, $newHeight);
+            if ($hasAlpha) {
+                imagealphablending($resized, false);
+                imagesavealpha($resized, true);
+                $transparent = imagecolorallocatealpha($resized, 255, 255, 255, 127);
+                if (false !== $transparent) {
+                    imagefilledrectangle($resized, 0, 0, $newWidth, $newHeight, $transparent);
                 }
-                break;
-            default:
-                return;
-        }
-
-        if (false === $srcImage || null === $srcImage) {
-            return;
-        }
-
-        $dstImage = imagecreatetruecolor(max(1, $newWidth), max(1, $newHeight));
-        if (false === $dstImage) {
-            return;
-        }
-
-        // Preserve transparency for PNG images
-        if (IMAGETYPE_PNG === $type) {
-            imagealphablending($dstImage, false);
-            imagesavealpha($dstImage, true);
-            $transparent = imagecolorallocatealpha($dstImage, 255, 255, 255, 127);
-            if (false !== $transparent) {
-                imagefilledrectangle($dstImage, 0, 0, $newWidth, $newHeight, $transparent);
             }
+            imagecopyresampled($resized, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+            $image = $resized;
+        } elseif ($hasAlpha) {
+            imagesavealpha($image, true);
         }
 
-        // Resize image
-        imagecopyresampled(
-            $dstImage,
-            $srcImage,
-            0,
-            0,
-            0,
-            0,
-            $newWidth,
-            $newHeight,
-            $width,
-            $height,
-        );
-
-        // Save image in original format
-        if (IMAGETYPE_JPEG === $type) {
-            imagejpeg($dstImage, $tmpFile, $quality);
-        } elseif (IMAGETYPE_PNG === $type) {
-            $pngQuality = (int) min(9, floor($quality / 10));
-            imagepng($dstImage, $tmpFile, $pngQuality);
-        } elseif (IMAGETYPE_WEBP === $type) {
-            imagewebp($dstImage, $tmpFile, $quality);
+        $saved = match ($type) {
+            IMAGETYPE_JPEG => imagejpeg($image, $tmpFile, $quality),
+            // PNG ist verlustfrei, Stufe 6 = zlib-Standard
+            IMAGETYPE_PNG => imagepng($image, $tmpFile, 6),
+            IMAGETYPE_WEBP => imagewebp($image, $tmpFile, $quality),
+            default => false,
+        };
+        if (!$saved) {
+            $this->log('error', 'Could not save processed image');
         }
-
-        // Free memory
     }
 
-    /**
-     * Fix image orientation based on EXIF data.
-     *
-     * @param string $tmpFile Path to the image file
-     * @param int $type Image type constant
-     * @return void
-     */
-    protected function fixExifOrientation($tmpFile, $type)
+    /** EXIF-Orientierung (1–8) eines JPEGs, 1 wenn keine oder nicht lesbar. */
+    protected function exifOrientation(string $tmpFile, int $type): int
     {
-        // Only process JPEG images as they typically contain EXIF data
-        if (IMAGETYPE_JPEG !== $type) {
-            return;
+        if (IMAGETYPE_JPEG !== $type || !function_exists('exif_read_data')) {
+            return 1;
         }
 
-        // Check if exif functions are available
-        if (!function_exists('exif_read_data')) {
-            $this->log('warning', 'EXIF functions not available - cannot fix orientation');
-            return;
-        }
-
-        // Check if imageflip function exists (requires PHP 5.5.0+)
-        if (!function_exists('imageflip')) {
-            $this->log('warning', 'imageflip() function not available, skipping EXIF orientation fix');
-            return;
-        }
-
-        // Read EXIF data with error handling
         $exif = @exif_read_data($tmpFile);
-        if (false === $exif || !isset($exif['Orientation'])) {
-            // No orientation data found, nothing to fix
-            return;
+        $orientation = is_array($exif) && isset($exif['Orientation']) ? (int) $exif['Orientation'] : 1;
+
+        return $orientation >= 1 && $orientation <= 8 ? $orientation : 1;
+    }
+
+    /** Dreht/spiegelt ein GD-Bild gemäß EXIF-Orientierung. */
+    protected function applyOrientation(GdImage $image, int $orientation): ?GdImage
+    {
+        if (in_array($orientation, [2, 4, 5, 7], true)) {
+            $flipped = imageflip($image, in_array($orientation, [2, 7], true) ? IMG_FLIP_HORIZONTAL : IMG_FLIP_VERTICAL);
+            if (!$flipped) {
+                return null;
+            }
         }
 
-        $orientation = $exif['Orientation'];
-
-        // No rotation needed
-        if (1 === $orientation) {
-            return;
+        $angle = match ($orientation) {
+            3 => 180,
+            5, 6, 7 => -90,
+            8 => 90,
+            default => 0,
+        };
+        if (0 === $angle) {
+            return $image;
         }
 
-        $this->log('info', "Fixing EXIF orientation: $orientation for file: $tmpFile");
+        $rotated = imagerotate($image, $angle, 0);
 
-        // Load the image with additional error checking
-        $image = @imagecreatefromjpeg($tmpFile);
-        if (false === $image) {
-            $this->log('error', 'Failed to load image for EXIF orientation fix');
-            return;
-        }
-
-        // Rotate/flip based on orientation value
-        switch ($orientation) {
-            case 2: // Horizontal flip
-                if (!imageflip($image, IMG_FLIP_HORIZONTAL)) {
-                    $this->log('error', 'Failed to flip image horizontally (orientation 2)');
-                    return;
-                }
-                break;
-            case 3: // 180 rotate
-                $rotated = imagerotate($image, 180, 0);
-                if (false === $rotated) {
-                    $this->log('error', 'Failed to rotate image 180 degrees');
-                    return;
-                }
-                $image = $rotated;
-                break;
-            case 4: // Vertical flip
-                if (!imageflip($image, IMG_FLIP_VERTICAL)) {
-                    $this->log('error', 'Failed to flip image vertically (orientation 4)');
-                    return;
-                }
-                break;
-            case 5: // Vertical flip + 90 rotate clockwise
-                if (!imageflip($image, IMG_FLIP_VERTICAL)) {
-                    $this->log('error', 'Failed to flip image vertically before rotation (orientation 5)');
-                    return;
-                }
-                $rotated = imagerotate($image, -90, 0);
-                if (false === $rotated) {
-                    $this->log('error', 'Failed to rotate image -90 degrees after vertical flip');
-                    return;
-                }
-                $image = $rotated;
-                break;
-            case 6: // 90 rotate clockwise
-                $rotated = imagerotate($image, -90, 0);
-                if (false === $rotated) {
-                    $this->log('error', 'Failed to rotate image -90 degrees');
-                    return;
-                }
-                $image = $rotated;
-                break;
-            case 7: // Horizontal flip + 90 rotate clockwise
-                if (!imageflip($image, IMG_FLIP_HORIZONTAL)) {
-                    $this->log('error', 'Failed to flip image horizontally before rotation (orientation 7)');
-                    return;
-                }
-                $rotated = imagerotate($image, -90, 0);
-                if (false === $rotated) {
-                    $this->log('error', 'Failed to rotate image -90 degrees after horizontal flip');
-                    return;
-                }
-                $image = $rotated;
-                break;
-            case 8: // 90 rotate counter-clockwise
-                $rotated = imagerotate($image, 90, 0);
-                if (false === $rotated) {
-                    $this->log('error', 'Failed to rotate image 90 degrees');
-                    return;
-                }
-                $image = $rotated;
-                break;
-        }
-
-        // Get image quality setting
-        $quality = rex_config::get('filepond_uploader', 'image_quality', 90);
-
-        // Save the corrected image with error handling
-        if (!@imagejpeg($image, $tmpFile, $quality)) {
-            $this->log('error', 'Failed to save EXIF-corrected image to file: ' . $tmpFile);
-            return;
-        }
-
-
-        $this->log('info', 'EXIF orientation corrected successfully');
+        return false === $rotated ? null : $rotated;
     }
 
     /**
