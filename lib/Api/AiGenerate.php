@@ -125,9 +125,7 @@ class AiGenerate extends rex_api_function
     private function sendJson(array $data, string $status = rex_response::HTTP_OK): never
     {
         rex_response::cleanOutputBuffers();
-        if (rex_response::HTTP_OK !== $status) {
-            rex_response::setStatus($status);
-        }
+        rex_response::setStatus($status);
         rex_response::sendJson($data);
         exit;
     }

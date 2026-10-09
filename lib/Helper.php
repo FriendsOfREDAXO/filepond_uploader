@@ -188,7 +188,7 @@ class Helper
     }
 
     /**
-     * Attribute für ein Upload-Widget: CSRF-Token, signierte Kategorie und Feldgrenzen, Medien-URL.
+     * Sicherheits-Attribute eines Upload-Widgets: CSRF-Token, signierte Kategorie und Feldgrenzen.
      * Ohne $allowedTypes/$maxFilesizeMb gelten serverseitig nur die globalen Einstellungen.
      */
     public static function widgetSecurityAttributes(int $categoryId, string $allowedTypes = '', int $maxFilesizeMb = 0): string
@@ -199,8 +199,7 @@ class Helper
         return ' data-filepond-csrf="' . rex_escape(self::csrfToken()) . '"'
             . ' data-filepond-cat-sig="' . rex_escape(self::signUploadPolicy($categoryId, $allowedTypes, $maxFilesizeMb)) . '"'
             . ' data-filepond-policy-types="' . rex_escape($allowedTypes) . '"'
-            . ' data-filepond-policy-maxsize="' . $maxFilesizeMb . '"'
-            . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"';
+            . ' data-filepond-policy-maxsize="' . $maxFilesizeMb . '"';
     }
 
     /**
@@ -227,7 +226,8 @@ class Helper
             'image-quality' => $quality > 0 ? $quality : Config::int('image_quality', 90),
             'client-resize' => Config::isEnabled('create_thumbnails', true),
             'image-editor' => Config::isEnabled('enable_image_editor', true),
-            'ai-enabled' => Config::isEnabled('enable_ai_alt') && Config::isEnabled('enable_ai_upload_modal', true),
+            // KI-Vorschläge nur im Backend, die KI-API nimmt nur Backend-User an
+            'ai-enabled' => rex::isBackend() && Config::isEnabled('enable_ai_alt') && Config::isEnabled('enable_ai_upload_modal', true),
             'ai-target-field' => Config::string('ai_target_field', 'med_alt'),
             'media-url' => rex_url::media(),
         ], $overrides);

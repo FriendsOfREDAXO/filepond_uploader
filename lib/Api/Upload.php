@@ -77,9 +77,8 @@ class Upload extends rex_api_function
     protected function sendResponse(mixed $data, string $statusCode = '200'): void
     {
         rex_response::cleanOutputBuffers();
-        if ('200' !== $statusCode) {
-            rex_response::setStatus($statusCode);
-        }
+        // Status immer setzen: im Frontend kann die Seite bereits 404 gesetzt haben (z. B. YRewrite)
+        rex_response::setStatus('200' === $statusCode ? rex_response::HTTP_OK : $statusCode);
         rex_response::sendJson($data);
         exit;
     }

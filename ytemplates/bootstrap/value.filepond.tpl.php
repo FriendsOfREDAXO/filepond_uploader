@@ -98,9 +98,10 @@ $dataAltRequired = null !== $alt_required
     ? ($alt_required ? 'true' : 'false')
     : ($isEnabledConfig('alt_required_default', true) ? 'true' : 'false');
 
+// KI-Vorschläge nur im Backend, die KI-API nimmt nur Backend-User an
 $cfgAiEnabled = $isEnabledConfig('enable_ai_alt', false)
     && $isEnabledConfig('enable_ai_upload_modal', true);
-$dataAiEnabled = null !== $ai_enabled ? ($ai_enabled ? 'true' : 'false') : ($cfgAiEnabled ? 'true' : 'false');
+$dataAiEnabled = rex::isBackend() && (null !== $ai_enabled ? $ai_enabled : $cfgAiEnabled) ? 'true' : 'false';
 $cfgAiTargetFieldVal = rex_config::get('filepond_uploader', 'ai_target_field', 'med_alt');
 $dataAiTargetField = '' !== $ai_target_field
     ? $ai_target_field
@@ -120,6 +121,7 @@ if (class_exists(Helper::class)) {
        data-widget="filepond"
        data-filepond-cat="<?= rex_escape((string) $dataCatId) ?>"
       <?= Helper::widgetSecurityAttributes((int) $dataCatId, (string) $dataTypes, (int) $dataMaxSize) ?>
+       data-filepond-media-url="<?= rex_escape(rex_url::media()) ?>"
        data-filepond-maxfiles="<?= rex_escape((string) $dataMaxFiles) ?>"
        data-filepond-types="<?= rex_escape((string) $dataTypes) ?>"
        data-filepond-maxsize="<?= rex_escape((string) $dataMaxSize) ?>"
