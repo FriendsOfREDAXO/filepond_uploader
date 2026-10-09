@@ -5,7 +5,13 @@
 
     var $ = window.jQuery;
 
-    var magicIconUrl = window.location.origin + '/assets/addons/filepond_uploader/icons/magic.svg';
+    var assetsBase = (document.currentScript && document.currentScript.src)
+        ? document.currentScript.src.replace(/[^/?#]*(\?.*)?$/, '')
+        : '/assets/addons/filepond_uploader/';
+    var magicIconUrl = assetsBase + 'icons/magic.svg';
+    var csrfToken = function () {
+        return (window.rex && window.rex.filepond_csrf) || '';
+    };
     var getMagicIcon = function(isSpinning) {
         var spinClass = isSpinning ? ' filepond-magic-icon--spin' : '';
         return '<img src="' + magicIconUrl + '" class="filepond-magic-icon' + spinClass + '" alt="" aria-hidden="true">';
@@ -35,10 +41,12 @@
     // regenerate: Feld(er) bereits befuellt -> bewusst neu erzeugen, Ergebnis-Cache umgehen.
     function generateForLanguage(fileName, langCode, regenerate) {
         return $.ajax({
-            url: '/redaxo/index.php',
+            url: 'index.php',
+            method: 'POST',
             cache: false,
             data: {
                 'rex-api-call': 'filepond_ai_generate',
+                '_csrf_token': csrfToken(),
                 'media_name': fileName,
                 'language': langCode,
                 'regenerate': regenerate ? 1 : 0
@@ -49,11 +57,12 @@
 
     function generateForLanguages(fileName, langCodes, regenerate) {
         return $.ajax({
-            url: '/redaxo/index.php',
+            url: 'index.php',
             method: 'POST',
             traditional: true,
             data: {
                 'rex-api-call': 'filepond_ai_generate',
+                '_csrf_token': csrfToken(),
                 'media_name': fileName,
                 'languages[]': langCodes,
                 'regenerate': regenerate ? 1 : 0

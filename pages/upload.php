@@ -75,13 +75,6 @@ $dataAiEnabled = $cfgAiEnabled ? 'true' : 'false';
 $cfgAiTargetFieldVal = rex_config::get('filepond_uploader', 'ai_target_field', 'med_alt');
 $dataAiTargetField = is_string($cfgAiTargetFieldVal) && '' !== trim($cfgAiTargetFieldVal) ? trim($cfgAiTargetFieldVal) : 'med_alt';
 
-// Session-Wert setzen für die API
-if ($skipMeta) {
-    rex_set_session('filepond_no_meta', true);
-} else {
-    rex_set_session('filepond_no_meta', false);
-}
-
 // YCom Media Auth Defaults Panel (optional, gegated)
 $ycomAuthHtml = '';
 if (YcomAuthSettings::isEnabled()

@@ -8,7 +8,6 @@ use FriendsOfRedaxo\FilePondUploader\Api\AutoMetainfo;
 use FriendsOfRedaxo\FilePondUploader\Api\Upload;
 use FriendsOfRedaxo\FilePondUploader\Api\YcomAuth;
 use FriendsOfRedaxo\FilePondUploader\Helper;
-use FriendsOfRedaxo\FilePondUploader\InfoCenter\UploadWidget;
 use FriendsOfRedaxo\FilePondUploader\LangFormatter;
 use FriendsOfRedaxo\FilePondUploader\MediaCleanup;
 use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
@@ -30,7 +29,6 @@ spl_autoload_register(static function (string $class): void {
         'rex_api_filepond_ycom_auth' => YcomAuth::class,
         'friendsofredaxo\\filepond\\filepondmediacleanup' => MediaCleanup::class,
         'friendsofredaxo\\filepond\\ycomauthsettings' => YcomAuthSettings::class,
-        'klxm\\infocenter\\widgets\\fileponduploadwidget' => UploadWidget::class,
     ][strtolower($class)] ?? null;
     if (null !== $alias && class_exists($alias)) {
         class_alias($alias, $class);
@@ -210,6 +208,7 @@ if (rex::isBackend() && rex::getUser()) {
     // KI-Button-Konfiguration fuer mediapool_ai.js direkt in die Seite (rex.filepond_ai),
     // statt sie auf jeder Backend-Seite per eigenem Request nachzuladen.
     rex_view::setJsProperty('filepond_ai', AutoMetainfo::getAiButtonConfig());
+    rex_view::setJsProperty('filepond_csrf', Helper::csrfToken());
 
     // Settings-Seite: JS für Dateitypen-Auswahl
     if ('filepond_uploader/settings/upload' === rex_be_controller::getCurrentPage()) {
@@ -499,20 +498,6 @@ if ($enableAltChecker === '|1|' || $enableAltChecker === '1') {
             
             // Als Unterseite hinzufügen
             $mediapoolPage->addSubpage($altCheckerPage);
-        }
-    });
-}
-
-// Info Center FilePond Upload Widget Integration
-if (rex_addon::exists('info_center') && rex_addon::get('info_center')->isAvailable()) {
-    rex_extension::register('PACKAGES_INCLUDED', function() {
-        $infoCenter = \KLXM\InfoCenter\InfoCenter::getInstance();
-        
-        // Check if user has permission (only for logged-in users)
-        if (rex::getUser()) {
-            $widget = new UploadWidget();
-            $widget->setPriority(0.5); // After TimeTracker (0), before Article (1)
-            $infoCenter->registerWidget($widget);
         }
     });
 }

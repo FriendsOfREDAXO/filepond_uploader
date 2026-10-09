@@ -48,51 +48,56 @@ class MediaCleanup
             $ignoreField = $GLOBALS['filepond_cleanup_ignore']['field'] ?? null;
         }
 
+        foreach (self::findUsages((string) $filename, $ignoreTable, null === $ignoreId ? null : (int) $ignoreId, $ignoreField) as $usage) {
+            $warnings[] = sprintf('FilePond Feld "%s" in Tabelle "%s" (ID: %s)', $usage['field'], $usage['label'], implode(', ', $usage['ids']));
+        }
+
+        return $warnings;
+    }
+
+    public static function isUsedInFilepondField(string $filename): bool
+    {
+        return [] !== self::findUsages($filename);
+    }
+
+    /**
+     * Fundstellen einer Datei in YForm-Feldern vom Typ filepond (kommagetrennte Liste).
+     *
+     * @return list<array{table: string, label: string, field: string, ids: list<int>}>
+     */
+    public static function findUsages(string $filename, ?string $ignoreTable = null, ?int $ignoreId = null, ?string $ignoreField = null): array
+    {
+        if ('' === $filename || !class_exists(rex_yform_manager_table::class)) {
+            return [];
+        }
+
         $sql = rex_sql::factory();
-        $yformTables = rex_yform_manager_table::getAll();
-
-        foreach ($yformTables as $table) {
+        $usages = [];
+        foreach (rex_yform_manager_table::getAll() as $table) {
             foreach ($table->getFields() as $field) {
-                if ('value' === $field->getType() && 'filepond' === $field->getTypeName()) {
-                    $tableName = $table->getTableName();
-                    $fieldName = $field->getName();
+                if ('value' !== $field->getType() || 'filepond' !== $field->getTypeName()) {
+                    continue;
+                }
+                $tableName = $table->getTableName();
+                $fieldName = $field->getName();
+                if ($ignoreTable === $tableName && $ignoreField === $fieldName && null === $ignoreId) {
+                    continue;
+                }
 
-                    // Überspringe das Feld das gerade bearbeitet wird
-                    if ($ignoreTable === $tableName && $ignoreField === $fieldName) {
-                        if (rex::isDebugMode() && (bool) rex_config::get('filepond_uploader', 'enable_debug_logging', false)) {
-                            rex_logger::factory()->debug('FilePondMediaCleanup: Überspringe Feld {field} in {table}', ['field' => $fieldName, 'table' => $tableName]);
-                        }
-                        continue;
-                    }
+                $query = 'SELECT id FROM ' . $sql->escapeIdentifier($tableName) . ' WHERE FIND_IN_SET(:filename, ' . $sql->escapeIdentifier($fieldName) . ')';
+                $params = ['filename' => $filename];
+                if ($ignoreTable === $tableName && null !== $ignoreId) {
+                    $query .= ' AND id != :id';
+                    $params['id'] = $ignoreId;
+                }
 
-                    // Prüfe ob Datei in diesem Feld verwendet wird
-                    $query = "SELECT id, $fieldName FROM $tableName WHERE FIND_IN_SET(:filename, $fieldName)";
-
-                    // Wenn wir eine ID ignorieren sollen, schließe diese aus
-                    if ($ignoreTable === $tableName && null !== $ignoreId) {
-                        $query .= ' AND id != :id';
-                        $result = $sql->getArray($query, [
-                            ':filename' => $filename,
-                            ':id' => $ignoreId,
-                        ]);
-                    } else {
-                        $result = $sql->getArray($query, [':filename' => $filename]);
-                    }
-
-                    if (count($result) > 0) {
-                        $tableLabelValue = $table->getName();
-                        $tableLabel = ('' !== $tableLabelValue) ? $tableLabelValue : $tableName;
-                        $warnings[] = sprintf(
-                            'FilePond Feld "%s" in Tabelle "%s" (ID: %s)',
-                            $fieldName,
-                            $tableLabel,
-                            implode(', ', array_column($result, 'id')),
-                        );
-                    }
+                $ids = array_map('intval', array_column($sql->getArray($query, $params), 'id'));
+                if ([] !== $ids) {
+                    $usages[] = ['table' => $tableName, 'label' => '' !== $table->getName() ? $table->getName() : $tableName, 'field' => $fieldName, 'ids' => $ids];
                 }
             }
         }
 
-        return $warnings;
+        return $usages;
     }
 }

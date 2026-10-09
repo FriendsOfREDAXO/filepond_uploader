@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use Throwable;
 use rex;
 use Exception;
 use rex_addon;
@@ -27,6 +28,8 @@ use FriendsOfRedaxo\MetaInfoLangFields\MetainfoLangHelper;
  */
 class AutoMetainfo extends rex_api_function
 {
+    use AuthorizesRequests;
+
     protected $published = true;
 
     /**
@@ -50,34 +53,11 @@ class AutoMetainfo extends rex_api_function
         exit;
     }
 
-    /**
-     * Gleiche Pruefung wie Upload::isAuthorized():
-     * Backend-User, API-Token oder YCom-User.
-     */
-    private function isAuthorized(): bool
-    {
-        if (null !== rex_backend_login::createUser()) {
-            return true;
-        }
-
-        $apiToken = rex_config::get('filepond_uploader', 'api_token');
-        $apiTokenStr = is_string($apiToken) ? $apiToken : '';
-        $requestToken = rex_request('api_token', 'string', '');
-        $sessionToken = rex_session('filepond_token', 'string', '');
-        if ('' !== $apiTokenStr
-            && (('' !== $requestToken && hash_equals($apiTokenStr, $requestToken))
-                || ('' !== $sessionToken && hash_equals($apiTokenStr, $sessionToken)))
-        ) {
-            return true;
-        }
-
-        /** @phpstan-ignore class.notFound */
-        return rex_plugin::get('ycom', 'auth')->isAvailable() && null !== rex_ycom_auth::getUser();
-    }
-
     public function execute(): rex_api_result
     {
-        if (!$this->isAuthorized()) {
+        try {
+            $this->authorize();
+        } catch (Throwable) {
             $this->sendResponse(['success' => false, 'error' => 'Unauthorized'], 401);
         }
 
@@ -90,18 +70,6 @@ class AutoMetainfo extends rex_api_function
         switch ($action) {
             case 'get_fields':
                 $this->getMetaInfoFields();
-                break;
-
-            case 'get_ai_target_field':
-                $this->getAiTargetField();
-                break;
-
-            case 'save_metadata':
-                $this->saveMetadata();
-                break;
-
-            case 'load_metadata':
-                $this->loadMetadata();
                 break;
 
             default:
@@ -150,11 +118,6 @@ class AutoMetainfo extends rex_api_function
         }
 
         return ['active' => false, 'key' => 'alt'];
-    }
-
-    private function getAiTargetField(): void
-    {
-        $this->sendResponse(['success' => true] + self::getAiButtonConfig());
     }
 
     /**
@@ -574,258 +537,4 @@ class AutoMetainfo extends rex_api_function
         return $languages;
     }
 
-    /**
-     * Speichert Metadaten für eine Datei.
-     */
-    private function saveMetadata(): void
-    {
-        try {
-            $fileId = rex_request('file_id', 'string');
-            $metadata = rex_request('metadata', 'array');
-
-            // Input validation
-            if ('' === $fileId) {
-                throw new Exception('Keine Datei-ID angegeben');
-            }
-
-            // Validate file_id format (filename pattern)
-            if (1 !== preg_match('/^[a-zA-Z0-9._-]+$/', $fileId)) {
-                throw new Exception('Ungültige Datei-ID');
-            }
-
-            if ([] === $metadata) {
-                throw new Exception('Ungültige Metadaten');
-            }
-
-            // Prüfe ob Datei existiert
-            $media = rex_media::get($fileId);
-            if (null === $media) {
-                throw new Exception('Mediendatei nicht gefunden');
-            }
-
-            // SQL für Update vorbereiten
-            $sql = rex_sql::factory();
-            $sql->setTable('rex_media');
-            $sql->setWhere(['filename' => $fileId]);
-
-            // Verarbeite jedes Feld mit Validierung
-            foreach ($metadata as $fieldName => $fieldValue) {
-                // Validiere Feldname gegen Whitelist
-                if (!$this->isValidMetaInfoField($fieldName)) {
-                    continue; // Skip invalid field names
-                }
-
-                if ($this->isMultilingual($fieldName)) {
-                    // Mehrsprachiges Feld - konvertiere zu MetaInfo Lang Fields Format
-                    $sanitizedValue = $this->sanitizeMetaInfoValue($fieldValue);
-                    $langData = $this->convertToMetaInfoLangFormat($sanitizedValue);
-                    $sql->setValue($fieldName, json_encode($langData));
-                } else {
-                    // Standard-Feld
-                    $sanitizedValue = $this->sanitizeMetaInfoValue($fieldValue);
-                    $sql->setValue($fieldName, $sanitizedValue);
-                }
-            }
-
-            // SQL error handling
-            try {
-                $sql->update();
-            } catch (rex_sql_exception $e) {
-                throw new Exception('Fehler beim Speichern der Metadaten: ' . $e->getMessage());
-            }
-
-            $this->sendResponse([
-                'success' => true,
-                'message' => 'Metadaten erfolgreich gespeichert',
-            ]);
-        } catch (Exception $e) {
-            // Log the exception internally for debugging
-            rex_logger::logException($e);
-
-            $this->sendResponse([
-                'success' => false,
-                'error' => 'Ein Fehler ist beim Speichern der Metadaten aufgetreten',
-            ], 500);
-        }
-    }
-
-    /**
-     * Konvertiert Frontend-Daten ins MetaInfo Lang Fields Format
-     * Frontend: {"de": "Text", "en": "Text"}
-     * MetaInfo: [{"clang_id": 1, "value": "Text"}, {"clang_id": 2, "value": "Text"}].
-     *
-     * @return list<array{clang_id: int, value: string}>
-     */
-    private function convertToMetaInfoLangFormat(mixed $fieldValue): array
-    {
-        if (!is_array($fieldValue)) {
-            return [];
-        }
-
-        $result = [];
-        $languages = rex_clang::getAll();
-
-        foreach ($fieldValue as $langCode => $value) {
-            // Finde Sprach-ID anhand des Codes
-            foreach ($languages as $clang) {
-                if ($clang->getCode() === $langCode) {
-                    $result[] = [
-                        'clang_id' => $clang->getId(),
-                        'value' => (string) $value,
-                    ];
-                    break;
-                }
-            }
-        }
-
-        return $result;
-    }
-
-    /**
-     * Lädt bestehende Metadaten für eine Datei.
-     */
-    private function loadMetadata(): void
-    {
-        try {
-            $fileId = rex_request('file_id', 'string');
-
-            // Input validation
-            if ('' === $fileId) {
-                throw new Exception('Keine Datei-ID angegeben');
-            }
-
-            // Validate file_id format (filename pattern)
-            if (1 !== preg_match('/^[a-zA-Z0-9._-]+$/', $fileId)) {
-                throw new Exception('Ungültige Datei-ID');
-            }
-
-            $media = rex_media::get($fileId);
-            if (null === $media) {
-                throw new Exception('Mediendatei nicht gefunden');
-            }
-
-            $metadata = [];
-
-            // Lade alle verfügbaren Felder wie in getMetaInfoFields
-            $standardFields = ['title', 'med_alt', 'med_copyright'];
-
-            if ($this->fieldExists('med_title_lang')) {
-                $standardFields[] = 'med_title_lang';
-            }
-
-            $optionalFields = ['med_description', 'med_keywords', 'med_source'];
-            foreach ($optionalFields as $field) {
-                if ($this->fieldExists($field)) {
-                    $standardFields[] = $field;
-                }
-            }
-
-            foreach ($standardFields as $fieldName) {
-                $fieldInfo = $this->analyzeField($fieldName);
-                $fieldValue = $media->getValue($fieldName);
-
-                if ($fieldInfo['multilingual']) {
-                    // Mehrsprachiges Feld - konvertiere von MetaInfo Lang Fields Format
-                    $metadata[$fieldName] = $this->convertFromMetaInfoLangFormat($fieldValue);
-                } else {
-                    // Standard-Feld
-                    $metadata[$fieldName] = $fieldValue;
-                }
-            }
-
-            $this->sendResponse([
-                'success' => true,
-                'metadata' => $metadata,
-            ]);
-        } catch (Exception $e) {
-            // Log the exception internally for debugging
-            rex_logger::logException($e);
-
-            $this->sendResponse([
-                'success' => false,
-                'error' => 'Ein Fehler ist beim Laden der Metadaten aufgetreten',
-            ], 500);
-        }
-    }
-
-    /**
-     * Konvertiert MetaInfo Lang Fields Format ins Frontend-Format
-     * MetaInfo: [{"clang_id": 1, "value": "Text"}, {"clang_id": 2, "value": "Text"}]
-     * Frontend: {"de": "Text", "en": "Text"}.
-     *
-     * @return array<string, string>
-     */
-    private function convertFromMetaInfoLangFormat(mixed $jsonData): array
-    {
-        if (null === $jsonData || '' === $jsonData || [] === $jsonData) {
-            return [];
-        }
-
-        // Verwende MetaInfo Lang Fields Helper wenn verfügbar
-        if (class_exists('\FriendsOfRedaxo\MetaInfoLangFields\MetainfoLangHelper')) {
-            $normalized = MetainfoLangHelper::normalizeLanguageData($jsonData);
-        } else {
-            // Fallback: JSON selbst dekodieren
-            $data = is_string($jsonData) ? json_decode($jsonData, true) : $jsonData;
-            $normalized = is_array($data) ? $data : [];
-        }
-
-        $result = [];
-        $languages = rex_clang::getAll();
-
-        foreach ($normalized as $item) {
-            if (isset($item['clang_id']) && isset($item['value'])) {
-                $clangId = (int) $item['clang_id'];
-                if (isset($languages[$clangId])) {
-                    $langCode = $languages[$clangId]->getCode();
-                    $result[$langCode] = $item['value'];
-                }
-            }
-        }
-
-        return $result;
-    }
-
-    /**
-     * Validate if a field name is allowed for MetaInfo updates.
-     */
-    private function isValidMetaInfoField(string $fieldName): bool
-    {
-        // Get all valid MetaInfo fields from database
-        static $validFields = null;
-
-        if (null === $validFields) {
-            $validFields = [];
-            $sql = rex_sql::factory();
-            $sql->setQuery('SELECT name FROM rex_metainfo_field WHERE table_name = "rex_media"');
-            while ($sql->hasNext()) {
-                $validFields[] = 'med_' . (string) ($sql->getValue('name') ?? '');
-                $sql->next();
-            }
-        }
-
-        return in_array($fieldName, $validFields, true);
-    }
-
-    /**
-     * Sanitize a metadata value (string or array).
-     */
-    private function sanitizeMetaInfoValue(mixed $value): mixed
-    {
-        if (is_array($value)) {
-            $sanitized = [];
-            foreach ($value as $k => $v) {
-                // Recursively sanitize for nested arrays (e.g., multilingual fields)
-                $sanitized[$k] = $this->sanitizeMetaInfoValue($v);
-            }
-            return $sanitized;
-        }
-        // Sanitize string: trim, remove dangerous chars but keep basic formatting
-        $sanitized = trim((string) $value);
-        // Remove potential script tags and other dangerous content
-        $sanitized = (string) preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/mi', '', $sanitized);
-        $sanitized = (string) preg_replace('/javascript:/i', '', $sanitized);
-        $sanitized = preg_replace('/on\w+\s*=/i', '', $sanitized);
-        return $sanitized;
-    }
 }

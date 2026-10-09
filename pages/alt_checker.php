@@ -2,6 +2,7 @@
 
 use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
 use FriendsOfRedaxo\FilePondUploader\AltTextChecker;
+use FriendsOfRedaxo\FilePondUploader\Helper;
 /**
  * Alt-Text-Checker - Bilder ohne Alt-Text finden und bearbeiten
  * 
@@ -56,7 +57,7 @@ if ($mediaPerm instanceof rex_media_perm && $mediaPerm->hasAll()) {
 // API Endpoint
 $apiEndpoint = rex_url::backendController([
     'rex-api-call' => 'filepond_alt_checker',
-    '_csrf_token' => rex_csrf_token::factory('filepond_alt_checker')->getValue()
+    '_csrf_token' => Helper::csrfToken(),
 ]);
 
 // Prüfen ob med_alt Feld existiert

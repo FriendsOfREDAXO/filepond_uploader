@@ -199,7 +199,7 @@
         // mit "Startsprache gemaess Browser" per 302 um und der Upload bekam HTML statt JSON.
         const getBasePath = () => window.location.origin + window.location.pathname;
         const basePath = getBasePath();
-        const magicIconUrl = `${window.location.origin}/assets/addons/filepond_uploader/icons/magic.svg`;
+        const magicIconUrl = assetsBase + 'icons/magic.svg';
         // console.log('Basepath ermittelt:', basePath);
 
         // Hilfsfunktion: hängt – sofern auf der Seite vorhanden – die YCom-Media-Auth-Defaults
@@ -229,6 +229,14 @@
         window.filepondAppendYcomAuthDefaults = appendYcomAuthDefaults;
 
         document.querySelectorAll('input[data-widget="filepond"]').forEach(input => {
+            // CSRF-Token (Frontend: am Widget, Backend: rex.filepond_csrf) und signierte Kategorie
+            const csrfToken = () => input.dataset.filepondCsrf || (window.rex && window.rex.filepond_csrf) || '';
+            const appendSecurity = (formData) => {
+                formData.append('_csrf_token', csrfToken());
+                formData.append('category_sig', input.dataset.filepondCatSig || '');
+            };
+            const mediaUrl = input.dataset.filepondMediaUrl || '/media/';
+
             // Prüfen, ob das Element bereits initialisiert wurde
             if (initializedElements.has(input)) {
                // console.log('FilePond element already initialized, skipping:', input);
@@ -258,7 +266,9 @@
             input.parentNode.insertBefore(fileInput, input.nextSibling);
 
             // Standardwerte für die Chunk-Größe 
-            const CHUNK_SIZE = parseInt(input.dataset.filepondChunkSize || '1') * 1024 * 1024; // Konfigurierbare Größe (Default: 1MB)
+            // Chunk-Größe in Bytes; Werte bis 1024 stammen aus älteren Templates und sind MB
+            const chunkSizeAttr = parseInt(input.dataset.filepondChunkSize || '0', 10) || 0;
+            const CHUNK_SIZE = chunkSizeAttr > 1024 ? chunkSizeAttr : (chunkSizeAttr > 0 ? chunkSizeAttr : 5) * 1024 * 1024;
 
             // Wiederverwendbare Funktion für File Preview
             const createFilePreview = (file, container) => {
@@ -346,7 +356,7 @@
                         img.style.maxWidth = '100%';
                         img.style.maxHeight = '300px';
                         img.style.objectFit = 'contain';
-                        img.src = '/media/' + fileName;
+                        img.src = mediaUrl + fileName;
                         container.appendChild(img);
                     } else if (/\.(mp4|webm|ogg|mov|avi|wmv|flv|mkv)$/i.test(fileName)) {
                         const video = document.createElement('video');
@@ -359,7 +369,7 @@
                         video.style.backgroundColor = '#000';
                         video.style.borderRadius = '4px';
                         video.crossOrigin = 'anonymous'; // Für CORS falls nötig
-                        video.src = '/media/' + fileName;
+                        video.src = mediaUrl + fileName;
                         
                         video.onerror = (e) => {
                             console.error('Uploaded video loading error:', e);
@@ -495,7 +505,7 @@
             // Lädt MetaInfo-Felder über API (geteilter Promise, siehe metaInfoFieldsPromise)
             const loadMetaInfoFields = () => {
                 if (!metaInfoFieldsPromise) {
-                    metaInfoFieldsPromise = fetch('/redaxo/index.php?rex-api-call=filepond_auto_metainfo&action=get_fields', {
+                    metaInfoFieldsPromise = fetch(basePath + '?rex-api-call=filepond_auto_metainfo&action=get_fields&_csrf_token=' + encodeURIComponent(csrfToken()), {
                         method: 'GET',
                         headers: { 'X-Requested-With': 'XMLHttpRequest' }
                     })
@@ -1041,6 +1051,7 @@
                             requestData.append('regenerate', regenerate ? '1' : '0');
                             requestData.append('language', languageCode);
                             requestData.append('rex-api-call', 'filepond_ai_generate');
+                            requestData.append('_csrf_token', csrfToken());
 
                             const response = await fetch(basePath, {
                                 method: 'POST',
@@ -1077,6 +1088,7 @@
                                 requestData.append('languages[]', code);
                             });
                             requestData.append('rex-api-call', 'filepond_ai_generate');
+                            requestData.append('_csrf_token', csrfToken());
 
                             const response = await fetch(basePath, {
                                 method: 'POST',
@@ -1428,31 +1440,9 @@
             // Speichert erweiterte Metadaten über unsere API
             const saveEnhancedMetadata = async (file, metadata, modal, resolve, reject) => {
                 try {
-                    // Wenn Datei bereits hochgeladen ist (serverId vorhanden)
-                    if (file.serverId) {
-                        const formData = new FormData();
-                        formData.append('file_id', file.serverId);
-                        formData.append('metadata', JSON.stringify(metadata));
-                        
-                        const response = await fetch('/redaxo/index.php?rex-api-call=filepond_auto_metainfo&action=save_metadata', {
-                            method: 'POST',
-                            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                            body: formData
-                        });
-                        
-                        const result = await response.json();
-                        if (result.success) {
-                            modal.close();
-                            resolve(metadata);
-                        } else {
-                            throw new Error(result.error || 'Fehler beim Speichern');
-                        }
-                    } else {
-                        // Datei noch nicht hochgeladen - speichere Metadaten für späteren Upload
-                        file.metaInfo = metadata;
-                        modal.close();
-                        resolve(metadata);
-                    }
+                    file.metaInfo = metadata;
+                    modal.close();
+                    resolve(metadata);
                 } catch (error) {
                     console.error('Fehler beim Speichern der erweiterten Metadaten:', error);
                     alert('Fehler beim Speichern: ' + error.message);
@@ -1471,7 +1461,7 @@
                             // poster nur bei videos setzen
                             ...(file.type?.startsWith('video/') ? {
                                 metadata: {
-                                    poster: '/media/' + file
+                                    poster: mediaUrl + file
                                 }
                             } : {})
                         }
@@ -1479,16 +1469,20 @@
                 }) : [];
 
             // Funktion zum Verarbeiten des Chunk-Uploads mit verbesserter Fehlerbehandlung
-            const processFileInChunks = async (fieldName, file, metadata, load, error, progress, abort, transfer, options, originalFileName) => {
+            const processFileInChunks = async (fieldName, file, metadata, load, error, progress, abort, transfer, options, originalFileName, outerSignal) => {
                 // originalFileName wird vom process-Callback übergeben (Blob-safe)
                 const safeFileName = originalFileName || file.name || 'upload';
                 let fileId;
                 const abortController = new AbortController();
+                if (outerSignal) {
+                    outerSignal.addEventListener('abort', () => abortController.abort(), { once: true });
+                }
 
                 try {
                     // 1. Metadaten senden und Upload vorbereiten
                     const prepareFormData = new FormData();
                     prepareFormData.append('rex-api-call', 'filepond_uploader');
+                    appendSecurity(prepareFormData);
                     prepareFormData.append('func', 'prepare');
                     prepareFormData.append('fileName', safeFileName);
                     prepareFormData.append('fieldName', fieldName);
@@ -1552,6 +1546,7 @@
                             const formData = new FormData();
                             formData.append(fieldName, chunk);
                             formData.append('rex-api-call', 'filepond_uploader');
+                            appendSecurity(formData);
                             formData.append('func', 'chunk-upload');
                             formData.append('fileId', fileId);
                             formData.append('fieldName', fieldName);
@@ -1611,6 +1606,7 @@
                     // Umstellung auf finale direkte Anfrage statt weiteren Chunk-Upload
                     const finalFormData = new FormData();
                     finalFormData.append('rex-api-call', 'filepond_uploader');
+                    appendSecurity(finalFormData);
                     finalFormData.append('func', 'finalize-upload'); // Neue Funktion zum Finalisieren
                     finalFormData.append('fileId', fileId);
                     finalFormData.append('fieldName', fieldName);
@@ -1627,7 +1623,8 @@
                         headers: {
                             'X-Requested-With': 'XMLHttpRequest'
                         },
-                        body: finalFormData
+                        body: finalFormData,
+                        signal: abortController.signal
                     });
                     
                     if (!lastChunkResponse.ok) {
@@ -1692,7 +1689,10 @@
                 
                 server: {
                     url: basePath,
-                    process: async (fieldName, file, metadata, load, error, progress, abort, transfer, options) => {
+                    // Synchron {abort} zurückgeben, sonst kann FilePond einen laufenden Upload nicht abbrechen
+                    process: (fieldName, file, metadata, load, error, progress, abort, transfer, options) => {
+                        const processController = new AbortController();
+                        (async () => {
                         try {
                             // Originalen Dateinamen ermitteln - wichtig für Blob-Objekte
                             // nach Image Transform Plugin (Blob hat kein .name)
@@ -1718,12 +1718,14 @@
 
                             if (useChunks) {
                                 // Großer File - Chunk Upload
-                                return processFileInChunks(fieldName, file, fileMetadata, load, error, progress, abort, transfer, options, originalFileName);
+                                await processFileInChunks(fieldName, file, fileMetadata, load, error, progress, abort, transfer, options, originalFileName, processController.signal);
+                                return;
                             } else {
                                 // Standard Upload für kleine Dateien
                                 const formData = new FormData();
                                 formData.append(fieldName, file, originalFileName);
                                 formData.append('rex-api-call', 'filepond_uploader');
+                                appendSecurity(formData);
                                 formData.append('func', 'prepare');
                                 formData.append('fileName', originalFileName);
                                 formData.append('fieldName', fieldName);
@@ -1736,7 +1738,8 @@
                                     headers: {
                                         'X-Requested-With': 'XMLHttpRequest'
                                     },
-                                    body: formData
+                                    body: formData,
+                                    signal: processController.signal
                                 });
 
                                 if (!prepareResponse.ok) {
@@ -1752,6 +1755,7 @@
                                 const uploadFormData = new FormData();
                                 uploadFormData.append(fieldName, file, originalFileName);
                                 uploadFormData.append('rex-api-call', 'filepond_uploader');
+                                appendSecurity(uploadFormData);
                                 uploadFormData.append('func', 'upload');
                                 uploadFormData.append('fileId', fileId);
                                 uploadFormData.append('fieldName', fieldName);
@@ -1765,7 +1769,8 @@
                                     headers: {
                                         'X-Requested-With': 'XMLHttpRequest'
                                     },
-                                    body: uploadFormData
+                                    body: uploadFormData,
+                                    signal: processController.signal
                                 });
 
                                 if (!response.ok) {
@@ -1790,6 +1795,9 @@
                                 }
                             }
                         } catch (err) {
+                            if (err.name === 'AbortError') {
+                                return;
+                            }
                             if (err.message !== 'Metadata input cancelled') {
                                 console.error('Upload error:', err);
                                 error('Upload failed: ' + err.message);
@@ -1828,6 +1836,14 @@
                                 });
                             }
                         }
+                        })();
+
+                        return {
+                            abort: () => {
+                                processController.abort();
+                                abort();
+                            }
+                        };
                     },
                     revert: {
                         method: 'POST',
@@ -1836,13 +1852,14 @@
                         },
                         ondata: (formData) => {
                             formData.append('rex-api-call', 'filepond_uploader');
+                            appendSecurity(formData);
                             formData.append('func', 'delete');
                             formData.append('filename', formData.get('serverId'));
                             return formData;
                         }
                     },
                     load: (source, load, error, progress, abort, headers) => {
-                        const url = '/media/' + source.replace(/^"|"$/g, '');
+                        const url = mediaUrl + source.replace(/^"|"$/g, '');
                         // console.log('FilePond load url:', url);
 
                         fetch(url)

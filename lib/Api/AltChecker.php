@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use FriendsOfRedaxo\FilePondUploader\Helper;
 use rex;
 use Exception;
 use rex_api_function;
@@ -25,6 +26,9 @@ class AltChecker extends rex_api_function
         $user = rex::getUser();
         if (!rex::isBackend() || null === $user || (!$user->isAdmin() && !$user->hasPerm('filepond_uploader[alt_checker]'))) {
             $this->sendJson(['error' => 'Zugriff verweigert']);
+        }
+        if (!Helper::isValidCsrfToken()) {
+            $this->sendJson(['error' => 'Invalid CSRF token']);
         }
 
         $action = rex_request('action', 'string');

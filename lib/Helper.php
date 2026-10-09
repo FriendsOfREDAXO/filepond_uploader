@@ -4,7 +4,13 @@ namespace FriendsOfRedaxo\FilePondUploader;
 
 use rex;
 use rex_addon;
+use rex_config;
+use rex_csrf_token;
+use rex_login;
+use rex_url;
 use rex_view;
+
+use function is_string;
 
 class Helper
 {
@@ -102,5 +108,67 @@ class Helper
             ),
             $cssFiles,
         ));
+    }
+
+    /** Gemeinsamer CSRF-Token aller filepond-APIs (Upload, Metadaten, KI). */
+    public static function csrfToken(): string
+    {
+        if (PHP_SESSION_ACTIVE !== session_status()) {
+            rex_login::startSession();
+        }
+
+        return rex_csrf_token::factory('filepond_uploader')->getValue();
+    }
+
+    /** Prüft den mitgeschickten Parameter `_csrf_token` gegen csrfToken(). */
+    public static function isValidCsrfToken(): bool
+    {
+        if (PHP_SESSION_ACTIVE !== session_status()) {
+            rex_login::startSession();
+        }
+
+        return rex_csrf_token::factory('filepond_uploader')->isValid();
+    }
+
+    /**
+     * Signiert eine Upload-Kategorie für Frontend-Widgets: der Client kann die Kategorie
+     * nicht mehr frei wählen, der Server akzeptiert nur die signierte.
+     */
+    public static function signCategory(int $categoryId): string
+    {
+        return hash_hmac('sha256', 'filepond_category:' . $categoryId, self::secret());
+    }
+
+    public static function isValidCategorySignature(int $categoryId, string $signature): bool
+    {
+        return '' !== $signature && hash_equals(self::signCategory($categoryId), $signature);
+    }
+
+    /**
+     * Ein fileId stammt immer aus uniqid('filepond_', true) und landet in Dateipfaden,
+     * daher nur genau dieses Format zulassen.
+     */
+    public static function isValidFileId(string $fileId): bool
+    {
+        return 1 === preg_match('/^filepond_[0-9a-f]{13,14}\.[0-9]{1,10}$/', $fileId);
+    }
+
+    /** Attribute für ein Upload-Widget: CSRF-Token, signierte Kategorie, Medien-URL. */
+    public static function widgetSecurityAttributes(int $categoryId): string
+    {
+        return ' data-filepond-csrf="' . rex_escape(self::csrfToken()) . '"'
+            . ' data-filepond-cat-sig="' . rex_escape(self::signCategory($categoryId)) . '"'
+            . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"';
+    }
+
+    private static function secret(): string
+    {
+        $token = rex_config::get('filepond_uploader', 'api_token', '');
+        if (!is_string($token) || '' === $token) {
+            $token = bin2hex(random_bytes(32));
+            rex_config::set('filepond_uploader', 'api_token', $token);
+        }
+
+        return $token;
     }
 }
