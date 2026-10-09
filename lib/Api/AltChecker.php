@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use rex_i18n;
 use FriendsOfRedaxo\FilePondUploader\Helper;
 use rex;
 use Exception;
@@ -82,7 +83,7 @@ class AltChecker extends rex_api_function
             // Prüfen ob med_alt Feld existiert
             if (!AltTextChecker::checkAltFieldExists()) {
                 $this->sendJson([
-                    'error' => 'Das Feld med_alt existiert nicht in der Medientabelle. Bitte lege es über MetaInfo an.',
+                    'error' => rex_i18n::rawMsg('alt_checker_field_missing_text'),
                     'field_missing' => true,
                 ]);
             }
@@ -129,7 +130,7 @@ class AltChecker extends rex_api_function
         $isMultilang = rex_request('is_multilang', 'bool', false);
 
         if ('' === $filename) {
-            $this->sendJson(['error' => 'Kein Dateiname angegeben']);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_filename')]);
         }
 
         // Dekoratives Bild: In Negativ-Liste aufnehmen
@@ -163,7 +164,7 @@ class AltChecker extends rex_api_function
         }
 
         if ([] === $updates) {
-            $this->sendJson(['error' => 'Keine Updates angegeben']);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_updates')]);
         }
 
         $result = AltTextChecker::bulkUpdateAltText($updates);
@@ -184,7 +185,7 @@ class AltChecker extends rex_api_function
         $languages = rex_request('languages', 'array', []);
 
         if ('' === $filename) {
-            $this->sendJson(['error' => 'Kein Dateiname angegeben']);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_filename')]);
         }
 
         $generator = new AltTextGenerator();

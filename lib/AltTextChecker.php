@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader;
 
+use rex_i18n;
 use rex;
 use Exception;
 use rex_addon;
@@ -456,7 +457,7 @@ class AltTextChecker
                     ++$results['success'];
                 } else {
                     ++$results['failed'];
-                    $results['errors'][$update['filename']] = $result['error'] ?? 'Unbekannter Fehler';
+                    $results['errors'][$update['filename']] = $result['error'] ?? rex_i18n::rawMsg('filepond_error_unknown');
                 }
             } else {
                 // Einsprachiges Update
@@ -466,7 +467,7 @@ class AltTextChecker
                     ++$results['success'];
                 } else {
                     ++$results['failed'];
-                    $results['errors'][$update['filename']] = $result['error'] ?? 'Unbekannter Fehler';
+                    $results['errors'][$update['filename']] = $result['error'] ?? rex_i18n::rawMsg('filepond_error_unknown');
                 }
             }
         }
@@ -509,7 +510,7 @@ class AltTextChecker
         $sql->setQuery('
             SELECT 
                 m.category_id,
-                COALESCE(c.name, "Keine Kategorie") as category_name,
+                COALESCE(c.name, ?) as category_name,
                 COUNT(*) as missing_count
             FROM ' . rex::getTable('media') . ' m
             LEFT JOIN ' . rex::getTable('media_category') . ' c ON m.category_id = c.id
@@ -517,7 +518,7 @@ class AltTextChecker
               AND (m.med_alt IS NULL OR m.med_alt = "")
             GROUP BY m.category_id, c.name
             ORDER BY missing_count DESC
-        ');
+        ', [rex_i18n::rawMsg('pool_kats_no')]);
 
         return $sql->getArray();
     }

@@ -17,6 +17,16 @@
         return '<img src="' + magicIconUrl + '" class="filepond-magic-icon' + spinClass + '" alt="" aria-hidden="true">';
     };
 
+    var escapeAttr = function(value) {
+        return String(value).replace(/[&<>"']/g, function(c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    };
+    var t = function(key, fallback) {
+        var texts = (window.rex && window.rex.filepond_ai && window.rex.filepond_ai.i18n) || {};
+        return texts[key] || fallback;
+    };
+
     var getButtonContent = function(label, isSpinning) {
         return getMagicIcon(isSpinning) + '<span class="filepond-ai-btn-label">' + label + '</span>';
     };
@@ -126,7 +136,7 @@
         $input.data('filepondAiAttached', true);
 
         var inputName = $input.attr('name') || '';
-        var btnHtml = '<button class="btn btn-default btn-ai-generate-mp" type="button" title="AI Alt-Text generieren" aria-label="AI Alt-Text generieren" data-lang="' + langCode + '" data-target-name="' + inputName.replace(/"/g, '&quot;') + '">' + getButtonContent('AI ALT', false) + '</button>';
+        var btnHtml = '<button class="btn btn-default btn-ai-generate-mp" type="button" title="' + escapeAttr(t('generate', 'AI alt text')) + '" aria-label="' + escapeAttr(t('generate', 'AI alt text')) + '" data-lang="' + escapeAttr(langCode) + '" data-target-name="' + escapeAttr(inputName) + '">' + getButtonContent('AI ALT', false) + '</button>';
 
         if ($input.is('textarea')) {
             var $wrap = $('<div class="filepond-ai-btn-wrap" style="margin-top:6px;"></div>');
@@ -187,7 +197,7 @@
             }
         });
 
-        var btnHtml = '<button class="btn btn-default btn-ai-generate-mp-lang" type="button" title="AI Alt-Text generieren (alle Sprachen)" aria-label="AI Alt-Text generieren (alle Sprachen)">' + getButtonContent('AI ALT alle', false) + '</button>';
+        var btnHtml = '<button class="btn btn-default btn-ai-generate-mp-lang" type="button" title="' + escapeAttr(t('generateAll', 'AI alt texts')) + '" aria-label="' + escapeAttr(t('generateAll', 'AI alt texts')) + '">' + getButtonContent('AI ALT', false) + '</button>';
         var statusHtml = '<span class="filepond-ai-status"></span>';
         var $wrap = $('<div class="filepond-ai-btn-wrap" style="margin: 4px 0 8px 0;"></div>').append(btnHtml).append(statusHtml);
 
@@ -313,7 +323,7 @@
             return;
         }
 
-        var btnHtml = '<button class="btn btn-default btn-ai-generate-mp-own" type="button" title="AI Alt-Text generieren" aria-label="AI Alt-Text generieren">' + getButtonContent('AI ALT', false) + '</button>';
+        var btnHtml = '<button class="btn btn-default btn-ai-generate-mp-own" type="button" title="' + escapeAttr(t('generate', 'AI alt text')) + '" aria-label="' + escapeAttr(t('generate', 'AI alt text')) + '">' + getButtonContent('AI ALT', false) + '</button>';
         var statusHtml = '<span class="filepond-ai-status"></span>';
         var $wrapEl = $('<div class="filepond-ai-btn-wrap" style="margin: 4px 0 8px 0;"></div>').append(btnHtml).append(statusHtml);
         $langInputs.before($wrapEl);
@@ -415,7 +425,7 @@
 
             var fileName = resolveClassicFileName();
             if (!fileName) {
-                alert('Dateiname konnte nicht ermittelt werden.');
+                alert(t('noFilename', 'Could not determine the file name.'));
                 return;
             }
 
@@ -430,12 +440,12 @@
                         // Change Event triggern damit REDAXO merkt dass sich was geändert hat
                         input.trigger('change');
                     } else {
-                        alert('Fehler: ' + (data.error || 'Unbekannter Fehler'));
+                        alert(t('error', 'Error') + ': ' + (data.error || t('unknown', 'Unknown error')));
                     }
                 })
                 .fail(function(xhr, status, error) {
                     console.error(xhr.responseText);
-                    alert('Systemfehler: ' + error);
+                    alert(t('error', 'Error') + ': ' + error);
                 })
                 .always(function() {
                     btn.prop('disabled', false).html(originalIcon);
@@ -453,13 +463,13 @@
 
             var $inputs = collectLangInputs($container);
             if ($inputs.length === 0) {
-                alert('Keine Sprachfelder gefunden.');
+                alert(t('noLanguageFields', 'No language fields found.'));
                 return;
             }
 
             var fileName = resolveClassicFileName();
             if (!fileName) {
-                alert('Dateiname konnte nicht ermittelt werden.');
+                alert(t('noFilename', 'Could not determine the file name.'));
                 return;
             }
 
@@ -468,7 +478,7 @@
             if ($statusNode.length > 0) {
                 $statusNode.text('');
             }
-            btn.prop('disabled', true).html(getButtonContent('AI ALT alle', true));
+            btn.prop('disabled', true).html(getButtonContent('AI ALT', true));
 
             (async function() {
                 try {
@@ -527,7 +537,7 @@
                     try {
                         batchData = await generateForLanguages(fileName, languageCodes, regenerate);
                     } catch (batchError) {
-                        console.error('AI-Mehrsprachen-Fehler', batchError);
+                        console.error('AI batch error', batchError);
                     }
 
                     for (var j = 0; j < languageCodes.length; j++) {
@@ -544,10 +554,10 @@
                                 if (fallbackData && fallbackData.success && fallbackData.alt_text) {
                                     suggestion = String(fallbackData.alt_text).trim();
                                 } else if (fallbackData && fallbackData.error) {
-                                    console.error('AI-Fehler (' + code + '): ' + fallbackData.error);
+                                    console.error('AI error (' + code + '): ' + fallbackData.error);
                                 }
                             } catch (fallbackError) {
-                                console.error('AI-Fehler (' + code + ')', fallbackError);
+                                console.error('AI error (' + code + ')', fallbackError);
                             }
                         }
 
@@ -561,7 +571,7 @@
 
                     if ($statusNode.length > 0) {
                         if (skippedCodes.length > 0) {
-                            $statusNode.text('Direkte Generierung ausgelassen für: ' + skippedCodes.join(', ') + ' (Fallback: ' + fallbackLanguage + ')');
+                            $statusNode.text(t('skipped', 'Skipped: {0} (fallback: {1})').replace('{0}', skippedCodes.join(', ')).replace('{1}', fallbackLanguage));
                         } else {
                             $statusNode.text('');
                         }
@@ -588,13 +598,13 @@
 
             var $inputs = $wrap.find('.mp-lang-inputs [data-json-field="' + mediaplaceOwnAltKey + '"][data-clang]');
             if ($inputs.length === 0) {
-                alert('Keine Sprachfelder gefunden.');
+                alert(t('noLanguageFields', 'No language fields found.'));
                 return;
             }
 
             var fileName = resolveOwnAltFileName($wrap);
             if (!fileName) {
-                alert('Dateiname konnte nicht ermittelt werden.');
+                alert(t('noFilename', 'Could not determine the file name.'));
                 return;
             }
 
@@ -640,7 +650,7 @@
                     try {
                         batchData = await generateForLanguages(fileName, languageCodes, regenerate);
                     } catch (batchError) {
-                        console.error('AI-Mehrsprachen-Fehler', batchError);
+                        console.error('AI batch error', batchError);
                     }
 
                     for (var j = 0; j < languageCodes.length; j++) {
@@ -657,10 +667,10 @@
                                 if (fallbackData && fallbackData.success && fallbackData.alt_text) {
                                     suggestion = String(fallbackData.alt_text).trim();
                                 } else if (fallbackData && fallbackData.error) {
-                                    console.error('AI-Fehler (' + code + '): ' + fallbackData.error);
+                                    console.error('AI error (' + code + '): ' + fallbackData.error);
                                 }
                             } catch (fallbackError) {
-                                console.error('AI-Fehler (' + code + ')', fallbackError);
+                                console.error('AI error (' + code + ')', fallbackError);
                             }
                         }
 
@@ -674,7 +684,7 @@
 
                     if ($statusNode.length > 0) {
                         if (skippedCodes.length > 0) {
-                            $statusNode.text('Direkte Generierung ausgelassen für: ' + skippedCodes.join(', ') + ' (Fallback: ' + fallbackLanguage + ')');
+                            $statusNode.text(t('skipped', 'Skipped: {0} (fallback: {1})').replace('{0}', skippedCodes.join(', ')).replace('{1}', fallbackLanguage));
                         } else {
                             $statusNode.text('');
                         }

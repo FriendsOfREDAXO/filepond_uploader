@@ -159,6 +159,15 @@ class AutoMetainfo extends rex_api_function
             'languages' => $languages,
             'fallback_language' => $fallbackLanguage,
             'blocked_languages' => $blockedLanguages,
+            'i18n' => [
+                'generate' => rex_i18n::rawMsg('filepond_ai_btn_generate'),
+                'generateAll' => rex_i18n::rawMsg('filepond_ai_btn_generate_all'),
+                'noFilename' => rex_i18n::rawMsg('filepond_ai_no_filename'),
+                'noLanguageFields' => rex_i18n::rawMsg('filepond_ai_no_language_fields'),
+                'error' => rex_i18n::rawMsg('filepond_error'),
+                'unknown' => rex_i18n::rawMsg('filepond_error_unknown'),
+                'skipped' => rex_i18n::rawMsg('filepond_ai_skipped'),
+            ],
             // Eigenes MediaPlace-Alt-Feld hat Vorrang vor dem klassischen
             // med_alt/ai_target_field (siehe AltTextStatus::isMissing() dort:
             // dieselbe Prioritaet gilt fuer die Anzeige des Fehlt-Hinweises).
@@ -249,7 +258,7 @@ class AutoMetainfo extends rex_api_function
 
             $this->sendResponse([
                 'success' => false,
-                'error' => 'Ein Fehler ist beim Laden der Metafelder aufgetreten',
+                'error' => rex_i18n::rawMsg('filepond_err_load_fields'),
             ], 500);
         }
     }

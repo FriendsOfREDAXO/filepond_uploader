@@ -386,7 +386,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
                 if (null !== $imageUrl) {
                     $ext = mb_strtoupper($media->getExtension());
                     $title = $media->getTitle();
-                    $displayText = ('' !== $title) ? $title : $ext . ' - ' . rex_i18n::msg('filepond_yform_files_count', 1);
+                    $displayText = ('' !== $title) ? $title : $ext . ' - ' . rex_i18n::msg('filepond_yform_file_one');
                     return '<span style="display: inline-flex; align-items: center;" title="' . rex_escape($filename) . '">' .
                            '<img src="' . rex_escape($imageUrl) . '" class="img-thumbnail" style="width: 40px; height: 40px; margin-right: 5px;" />' .
                            '<span>' . rex_escape($displayText) . '</span>' .
@@ -399,7 +399,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
             $icon = self::getFileIcon($extension);
             $extUpper = mb_strtoupper($extension);
             $title = $media->getTitle();
-            $displayText = ('' !== $title) ? $title : $extUpper . ' - ' . rex_i18n::msg('filepond_yform_files_count', 1);
+            $displayText = ('' !== $title) ? $title : $extUpper . ' - ' . rex_i18n::msg('filepond_yform_file_one');
 
             return '<span style="display: inline-flex; align-items: center;" title="' . rex_escape($filename) . '">' .
                    '<i class="fa ' . $icon . ' text-muted" style="font-size: 30px; width: 40px; text-align: center; margin-right: 5px;"></i>' .

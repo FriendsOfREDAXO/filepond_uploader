@@ -99,7 +99,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Datei nicht gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -108,7 +108,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Keine Bilddatei',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_no_image'),
             ];
         }
 
@@ -117,7 +117,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'SVG wird für AI-Analyse nicht unterstützt (Vektorformat ohne verlässliches Pixel-Rendering)',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_svg'),
             ];
         }
 
@@ -126,7 +126,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Datei nicht auf dem Server gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -155,7 +155,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Datei nicht gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -167,7 +167,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Keine Bilddatei',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_no_image'),
             ];
         }
 
@@ -175,7 +175,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'SVG-Dateien werden nicht unterstützt',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_svg'),
             ];
         }
 
@@ -203,7 +203,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Datei nicht gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -211,7 +211,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Keine Bilddatei',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_no_image'),
             ];
         }
 
@@ -220,7 +220,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'SVG-Dateien werden nicht unterstützt',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_svg'),
             ];
         }
 
@@ -229,7 +229,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Datei nicht auf dem Server gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -256,7 +256,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Datei nicht gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -268,7 +268,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Keine Bilddatei',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_no_image'),
             ];
         }
 
@@ -276,7 +276,7 @@ class AltTextGenerator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'SVG-Dateien werden nicht unterstützt',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_svg'),
             ];
         }
 
@@ -533,7 +533,7 @@ class AltTextGenerator
         }
 
         if ('image/svg+xml' === $mimeType) {
-            throw new Exception('SVG wird für AI-Analyse nicht unterstützt (Vektorformat ohne verlässliches Pixel-Rendering)');
+            throw new Exception(rex_i18n::rawMsg('filepond_ai_err_svg'));
         }
 
         $specialMimes = ['image/heic', 'image/heif', 'image/avif', 'image/webp'];

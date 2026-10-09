@@ -255,7 +255,19 @@ if ($isMediaWidget): ?>
 // FilePond Media Widget Integration
 (function() {
     'use strict';
-    
+
+    const L = <?= json_encode([
+        'uploaded' => rex_i18n::rawMsg('filepond_upload_uploaded_files'),
+        'selectAll' => rex_i18n::rawMsg('filepond_upload_select_all'),
+        'selectAllHint' => rex_i18n::rawMsg('filepond_upload_select_all_hint'),
+        'selectForList' => rex_i18n::rawMsg('filepond_upload_select_for_list'),
+        'select' => rex_i18n::rawMsg('filepond_upload_select'),
+        'uploadSuccess' => rex_i18n::rawMsg('filepond_upload_success_short'),
+        'added' => rex_i18n::rawMsg('filepond_upload_added'),
+        'allAdded' => rex_i18n::rawMsg('filepond_upload_all_added'),
+    ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
     const MediaWidget = {
         openerInputField: '<?= rex_escape($openerInputField, 'js') ?>',
         isMediaList: <?= str_starts_with($openerInputField, 'REX_MEDIALIST_') ? 'true' : 'false' ?>,
@@ -296,7 +308,7 @@ if ($isMediaWidget): ?>
             this.resultsContainer.innerHTML = `
                 <div class="panel-heading">
                     <h4 class="panel-title">
-                        <i class="fa fa-check-circle"></i> Hochgeladene Dateien
+                        <i class="fa fa-check-circle"></i> ${esc(L.uploaded)}
                     </h4>
                 </div>
                 <div class="panel-body">
@@ -304,10 +316,10 @@ if ($isMediaWidget): ?>
                     ${this.isMediaList ? `
                         <div id="filepond-bulk-actions" class="fp-bulk-actions">
                             <button type="button" class="btn btn-primary btn-sm" id="filepond-select-all">
-                                <i class="fa fa-download"></i> Alle Dateien in Medienliste übernehmen
+                                <i class="fa fa-download"></i> ${esc(L.selectAll)}
                             </button>
                             <small class="text-muted fp-bulk-actions-text">
-                                Übernimmt alle hochgeladenen Dateien auf einmal
+                                ${esc(L.selectAllHint)}
                             </small>
                         </div>
                     ` : ''}
@@ -429,7 +441,7 @@ if ($isMediaWidget): ?>
                 listItem.className = 'fp-media-upload-result-extended';
                 listItem.dataset.filename = filename; // Für "Alle übernehmen" Funktion
                 
-                const buttonText = this.isMediaList ? 'In Medienliste übernehmen' : 'Übernehmen';
+                const buttonText = this.isMediaList ? L.selectForList : L.select;
                 const isImage = this.isImageFile(filename);
                 const previewHtml = isImage ? this.createImagePreview(filename) : this.createFileIcon(filename);
                 
@@ -454,7 +466,7 @@ if ($isMediaWidget): ?>
                 
                 const smallEl = document.createElement('small');
                 smallEl.className = 'text-muted';
-                smallEl.textContent = 'Erfolgreich hochgeladen';
+                smallEl.textContent = L.uploadSuccess;
                 colInfo.appendChild(smallEl);
                 
                 if (isImage) {
@@ -572,7 +584,7 @@ if ($isMediaWidget): ?>
                         // Button als "hinzugefügt" markieren
                         const button = document.querySelector(`button[data-filename="${filename}"]`);
                         if (button) {
-                            button.innerHTML = '<i class="fa fa-check"></i> Hinzugefügt';
+                            button.innerHTML = '<i class="fa fa-check"></i> ' + esc(L.added);
                             button.className = 'btn btn-default btn-sm';
                             button.disabled = true;
                         }
@@ -597,13 +609,13 @@ if ($isMediaWidget): ?>
             
             const filesList = document.querySelector('#filepond-uploaded-files');
             if (!filesList) {
-                console.error('Keine Dateien zum Übernehmen gefunden!');
+                console.error('No uploaded files found');
                 return;
             }
             
             const allFiles = filesList.querySelectorAll('li[data-filename]');
             if (allFiles.length === 0) {
-                console.error('Keine Dateien zum Übernehmen gefunden!');
+                console.error('No uploaded files found');
                 return;
             }
             
@@ -636,7 +648,7 @@ if ($isMediaWidget): ?>
                             // Button als "hinzugefügt" markieren
                             const button = fileItem.querySelector(`button[data-filename="${filename}"]`);
                             if (button) {
-                                button.innerHTML = '<i class="fa fa-check"></i> Hinzugefügt';
+                                button.innerHTML = '<i class="fa fa-check"></i> ' + esc(L.added);
                                 button.className = 'btn btn-default btn-sm';
                                 button.disabled = true;
                             }
@@ -653,7 +665,7 @@ if ($isMediaWidget): ?>
                     // "Alle übernehmen" Button deaktivieren
                     const selectAllButton = document.querySelector('#filepond-select-all');
                     if (selectAllButton) {
-                        selectAllButton.innerHTML = '<i class="fa fa-check"></i> Alle hinzugefügt';
+                        selectAllButton.innerHTML = '<i class="fa fa-check"></i> ' + esc(L.allAdded);
                         selectAllButton.className = 'btn btn-default btn-sm';
                         selectAllButton.disabled = true;
                     }

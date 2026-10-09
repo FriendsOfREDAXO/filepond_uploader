@@ -149,8 +149,8 @@ $currentTypesValue = rex_config::get('filepond_uploader', 'allowed_types', 'imag
 $currentTypes = array_map('trim', explode(',', $currentTypesValue));
 
 $typeGroups = [
-    'Bilder' => [
-        'image/*' => 'Alle Bilder (image/*)',
+    rex_i18n::msg('filepond_types_images') => [
+        'image/*' => rex_i18n::msg('filepond_types_all_images') . ' (image/*)',
         'image/jpeg' => 'JPEG',
         'image/png' => 'PNG',
         'image/gif' => 'GIF',
@@ -162,7 +162,7 @@ $typeGroups = [
         'image/avif' => 'AVIF',
         'image/x-icon' => 'ICO',
     ],
-    'Dokumente' => [
+    rex_i18n::msg('filepond_types_documents') => [
         'application/pdf' => 'PDF',
         'text/plain' => 'Text (.txt)',
         'text/csv' => 'CSV',
@@ -174,11 +174,11 @@ $typeGroups = [
         'application/json' => 'JSON',
         'text/xml' => 'XML',
         'text/vtt' => 'WebVTT (.vtt)',
-        'text/srt' => 'Untertitel (.srt)',
+        'text/srt' => rex_i18n::msg('filepond_types_subtitles') . ' (.srt)',
         'application/epub+zip' => 'E-Book (.epub)',
         'application/postscript' => 'PostScript (.eps)',
     ],
-    'Archive' => [
+    rex_i18n::msg('filepond_types_archives') => [
         'application/zip' => 'ZIP',
         'application/x-gzip' => 'GZIP (.gz)',
         'application/x-tar' => 'TAR',
@@ -186,7 +186,7 @@ $typeGroups = [
         'application/x-7z-compressed' => '7-Zip (.7z)',
     ],
     'Video' => [
-        'video/*' => 'Alle Videos (video/*)',
+        'video/*' => rex_i18n::msg('filepond_types_all_videos') . ' (video/*)',
         'video/mp4' => 'MP4',
         'video/mpeg' => 'MPEG',
         'video/quicktime' => 'QuickTime (.mov)',
@@ -196,7 +196,7 @@ $typeGroups = [
         'video/x-matroska' => 'MKV',
     ],
     'Audio' => [
-        'audio/*' => 'Alle Audio (audio/*)',
+        'audio/*' => rex_i18n::msg('filepond_types_all_audio') . ' (audio/*)',
         'audio/mpeg' => 'MP3',
         'audio/wav' => 'WAV',
         'audio/ogg' => 'OGG Audio',
@@ -206,13 +206,13 @@ $typeGroups = [
         'audio/mp4' => 'M4A',
         'audio/webm' => 'WebM Audio',
     ],
-    'Office' => [
+    'office' => [
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'Word (.docx)',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'Excel (.xlsx)',
         'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'PowerPoint (.pptx)',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.template' => 'Word-Vorlage (.dotx)',
-        'application/vnd.openxmlformats-officedocument.presentationml.template' => 'PowerPoint-Vorlage (.potx)',
-        'application/vnd.openxmlformats-officedocument.presentationml.slideshow' => 'PowerPoint-Show (.ppsx)',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.template' => rex_i18n::msg('filepond_types_word_template') . ' (.dotx)',
+        'application/vnd.openxmlformats-officedocument.presentationml.template' => rex_i18n::msg('filepond_types_powerpoint_template') . ' (.potx)',
+        'application/vnd.openxmlformats-officedocument.presentationml.slideshow' => 'PowerPoint Show (.ppsx)',
         'application/msword' => '⚠ Word (.doc)',
         'application/vnd.ms-excel' => '⚠ Excel (.xls)',
         'application/vnd.ms-powerpoint' => '⚠ PowerPoint (.ppt)',
@@ -222,7 +222,7 @@ $typeGroups = [
         'application/vnd.oasis.opendocument.spreadsheet' => 'Calc (.ods)',
         'application/vnd.oasis.opendocument.presentation' => 'Impress (.odp)',
     ],
-    'Fonts' => [
+    rex_i18n::msg('filepond_types_fonts') => [
         'font/woff' => 'WOFF',
         'font/woff2' => 'WOFF2',
         'font/ttf' => 'TrueType (.ttf)',
@@ -263,13 +263,13 @@ foreach ($typeGroups as $groupName => $types) {
     $typesHtml .= '<div class="panel panel-default">';
     $typesHtml .= '<div class="panel-heading" role="tab" id="' . $panelId . '">';
     $typesHtml .= '<h4 class="panel-title"><a role="button" data-toggle="collapse" data-parent="#filepond-types-accordion" href="#' . $collapseId . '" aria-expanded="false" aria-controls="' . $collapseId . '" style="text-decoration:none;">';
-    $typesHtml .= rex_escape($groupName) . $badge;
+    $typesHtml .= rex_escape('office' === $groupName ? 'Office' : $groupName) . $badge;
     $typesHtml .= '</a></h4></div>';
     $typesHtml .= '<div id="' . $collapseId . '" class="panel-collapse collapse" role="tabpanel" aria-labelledby="' . $panelId . '">';
     $typesHtml .= '<div class="panel-body">';
 
-    if ('Office' === $groupName) {
-        $typesHtml .= '<div class="alert alert-warning" style="padding:6px 10px; margin-bottom:8px; font-size:12px;"><i class="rex-icon fa-exclamation-triangle"></i> Alte Office-Formate (.doc, .xls, .ppt) können Makros enthalten und stellen ein Sicherheitsrisiko dar. Wenn möglich, nur moderne Formate (.docx, .xlsx, .pptx) erlauben.</div>';
+    if ('office' === $groupName) {
+        $typesHtml .= '<div class="alert alert-warning" style="padding:6px 10px; margin-bottom:8px; font-size:12px;"><i class="rex-icon fa-exclamation-triangle"></i> ' . rex_i18n::msg('filepond_types_office_warning') . '</div>';
     }
 
     $typesHtml .= '<div class="row">';

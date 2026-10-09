@@ -236,8 +236,7 @@ $currentPage = rex_be_controller::getCurrentPage();
         <?php if ($aiEnabled && [] !== $blockedLabelParts): ?>
         <div class="alert alert-info" style="margin: 12px 12px 0 12px;">
             <i class="fa fa-info-circle"></i>
-            Direkte AI-Generierung ist für folgende Sprachen deaktiviert: <strong><?= rex_escape(implode(', ', $blockedLabelParts)) ?></strong>.
-            Diese Felder nutzen den Fallback-Text aus <strong><?= rex_escape($fallbackName) ?> (<?= strtoupper($fallbackLangCode) ?>)</strong>.
+            <?= $addon->i18n('alt_checker_blocked_languages', implode(', ', $blockedLabelParts), $fallbackName . ' (' . strtoupper($fallbackLangCode) . ')') ?>
         </div>
         <?php endif; ?>
         <div class="panel-body" id="images-container" style="padding: 0;">
@@ -643,6 +642,14 @@ $(document).on('rex:ready', function() {
         currentLangId: <?= json_encode($currentLangId) ?>,
         aiEnabled: <?= json_encode(AltTextGenerator::isEnabled()) ?>,
         spinnerMarkup: '<span class="fp-spinner" aria-hidden="true"></span>',
+        L: <?= json_encode([
+            'error' => rex_i18n::rawMsg('filepond_error'),
+            'unknown' => rex_i18n::rawMsg('filepond_error_unknown'),
+            'saving' => rex_i18n::rawMsg('filepond_saving'),
+            'saveFailed' => rex_i18n::rawMsg('alt_checker_save_failed'),
+            'aiError' => rex_i18n::rawMsg('alt_checker_ai_error'),
+            'skipped' => rex_i18n::rawMsg('alt_checker_ai_skipped'),
+        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
         modifiedImages: new Set(),
         
         init() {
@@ -789,11 +796,11 @@ $(document).on('rex:ready', function() {
                         });
                     }, 500);
                 } else {
-                    alert('Fehler: ' + (response.error || 'Unbekannt'));
+                    alert(this.L.error + ': ' + (response.error || this.L.unknown));
                 }
             })
             .fail((xhr, status, error) => {
-                alert('Fehler: ' + error);
+                alert(this.L.error + ': ' + error);
             })
             .always(() => {
                 $row.removeClass('saving');
@@ -836,7 +843,7 @@ $(document).on('rex:ready', function() {
                 return;
             }
             
-            $('#btn-save-all').prop('disabled', true).html(this.spinnerMarkup + 'Speichern...');
+            $('#btn-save-all').prop('disabled', true).html(this.spinnerMarkup + this.escapeHtml(this.L.saving));
             
             $.post(this.apiEndpoint, {
                 action: 'bulk_update',
@@ -848,11 +855,11 @@ $(document).on('rex:ready', function() {
                     window.location.reload();
                 }
                 if (response.failed > 0) {
-                    alert(response.failed + ' Fehler beim Speichern');
+                    alert(this.L.saveFailed.replace('{0}', response.failed));
                 }
             })
             .fail((xhr, status, error) => {
-                alert('Fehler: ' + error);
+                alert(this.L.error + ': ' + error);
             })
             .always(() => {
                 $('#btn-save-all').prop('disabled', false).html('<i class="fa fa-save"></i> <?= $addon->i18n('alt_checker_save_all') ?>');
@@ -888,11 +895,11 @@ $(document).on('rex:ready', function() {
                         });
                     }, 800);
                 } else {
-                    alert('Fehler: ' + (response.error || 'Unbekannt'));
+                    alert(this.L.error + ': ' + (response.error || this.L.unknown));
                 }
             })
             .fail((xhr, status, error) => {
-                alert('Fehler: ' + error);
+                alert(this.L.error + ': ' + error);
             })
             .always(() => {
                 $row.removeClass('saving');
@@ -1013,8 +1020,7 @@ $(document).on('rex:ready', function() {
             const infoHtml = `
                 <div id="alt-checker-ai-skip-info" class="alert alert-info" style="margin: 12px; margin-bottom: 0;">
                     <i class="fa fa-info-circle"></i>
-                    Direkte AI-Generierung ausgelassen für <strong>${this.escapeHtml(skippedLabel)}</strong>.
-                    Verwendeter Fallback: <strong>${this.escapeHtml(fallbackLabel)}</strong>.
+                    ${this.escapeHtml(this.L.skipped.replace('{0}', skippedLabel).replace('{1}', fallbackLabel))}
                 </div>
             `;
 
@@ -1043,7 +1049,7 @@ $(document).on('rex:ready', function() {
                 const response = await this.requestAiBatch(filename, languageCodes);
 
                 if (!response.success) {
-                    alert('<?= $addon->i18n('alt_checker_ai_error') ?>: ' + (response.error || 'Unbekannt'));
+                    alert(this.L.aiError + ': ' + (response.error || this.L.unknown));
                     return;
                 }
 
@@ -1070,7 +1076,7 @@ $(document).on('rex:ready', function() {
                     this.showSkippedLanguageInfo(response.blocked_languages_used, response.fallback_language);
                 }
             } catch (e) {
-                alert('<?= $addon->i18n('alt_checker_ai_error') ?>: ' + e.message);
+                alert(this.L.aiError + ': ' + e.message);
             } finally {
                 $btn.prop('disabled', false).html(originalHtml);
                 $row.removeClass('saving');
