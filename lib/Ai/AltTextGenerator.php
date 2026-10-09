@@ -1,68 +1,31 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader\Ai;
+
+use Exception;
+use FriendsOfRedaxo\AiPlatform\Service;
+use FriendsOfRedaxo\FilePondUploader\Config;
+use rex_addon;
+use rex_i18n;
+use Imagick;
+use Throwable;
+use finfo;
+use rex_config;
+use rex_dir;
+use rex_file;
+use rex_media;
+use rex_path;
+
 /**
- * AI Alt-Text Generator für REDAXO.
- *
- * Unterstützt Google Gemini, Cloudflare Workers AI und OpenWebUI (OpenAI Compatible)
- *
- * @package filepond_uploader
+ * Erzeugt Alt-Texte über das AddOn ai_platform (Profil vom Typ "Bildverständnis").
  */
-
-class filepond_ai_alt_generator
+class AltTextGenerator
 {
-    // Verfügbare Provider
-    public const PROVIDERS = [
-        'gemini' => 'Google Gemini',
-        'cloudflare' => 'Cloudflare Workers AI',
-        'openwebui' => 'OpenWebUI / OpenAI Compatible',
-    ];
-
-    // Standardliste (Stand: Oktober 2026), nur noch Rueckfall ohne API-Key bzw. ohne
-    // Verbindung -- die Auswahl kommt live von Google, siehe GeminiModelCatalog.
-    public const GEMINI_MODELS = [
-        'gemini-3.8-flash' => 'Gemini 3.8 Flash ⭐',
-        'gemini-3.6-flash' => 'Gemini 3.6 Flash',
-        'gemini-3.5-flash-lite' => 'Gemini 3.5 Flash-Lite (günstiger, schneller)',
-        'gemini-3.1-pro-preview' => 'Gemini 3.1 Pro (Preview) 💎',
-        // Google gibt die 2.5-Modelle nur noch an Projekte aus, die sie
-        // bereits genutzt haben -- neue API-Keys bekommen eine Fehlermeldung.
-        'gemini-2.5-flash' => 'Gemini 2.5 Flash (nur bestehende Projekte)',
-        'gemini-2.5-flash-lite' => 'Gemini 2.5 Flash-Lite (nur bestehende Projekte)',
-        'gemini-2.5-pro' => 'Gemini 2.5 Pro (nur bestehende Projekte) 💎',
-    ];
-
-    public const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
-
-    // Von Google abgeschaltete Modelle => Nachfolger laut
-    // https://ai.google.dev/gemini-api/docs/deprecations
-    // Ältere Installationen haben diese IDs noch in rex_config stehen
-    // (gemini-1.5-flash war bis 2.9.1 der Default in package.yml).
-    public const GEMINI_MODEL_REPLACEMENTS = [
-        'gemini-1.5-flash' => 'gemini-3.6-flash',
-        'gemini-1.5-flash-8b' => 'gemini-3.5-flash-lite',
-        'gemini-1.5-pro' => 'gemini-3.1-pro-preview',
-        'gemini-2.0-flash' => 'gemini-3.6-flash',
-        'gemini-2.0-flash-001' => 'gemini-3.6-flash',
-        'gemini-2.0-flash-lite' => 'gemini-3.5-flash-lite',
-        'gemini-2.0-flash-lite-001' => 'gemini-3.5-flash-lite',
-        'gemini-3-pro-preview' => 'gemini-3.1-pro-preview',
-    ];
-
-    // Verfügbare Cloudflare-Modelle
-    public const CLOUDFLARE_MODELS = [
-        '@cf/llava-hf/llava-1.5-7b-hf' => 'LLaVA 1.5 7B ⭐',
-    ];
-
-    // Legacy: für Abwärtskompatibilität
-    public const MODELS = self::GEMINI_MODELS;
-
     public const PROMPT_PROFILES = [
         'accessibility' => 'Barrierefrei (Standard)',
         'neutral' => 'Kurz / neutral',
         'seo' => 'SEO-fokussiert',
     ];
-
-    private filepond_ai_provider_interface $provider;
 
     /** Gespeichertes Ergebnis ignorieren (bewusste Neuerzeugung), neues Ergebnis wird trotzdem gecacht. */
     private bool $forceRefresh = false;
@@ -75,92 +38,35 @@ class filepond_ai_alt_generator
     }
 
     /**
-     * Constructor.
+     * ai_platform-Profil für die Alt-Texte: das in den Einstellungen gewählte, sonst das
+     * Standardprofil "Bildverständnis" von ai_platform. Null, wenn keins nutzbar ist.
      */
-    public function __construct()
+    public static function getProfileId(): ?int
     {
-        $providerKey = rex_config::get('filepond_uploader', 'ai_provider', 'gemini');
-
-        // Provider Factory Logic
-        switch ($providerKey) {
-            case 'cloudflare':
-                $this->provider = new filepond_ai_provider_cloudflare(
-                    rex_config::get('filepond_uploader', 'cloudflare_api_token', ''),
-                    rex_config::get('filepond_uploader', 'cloudflare_account_id', ''),
-                    rex_config::get('filepond_uploader', 'cloudflare_model', '@cf/llava-hf/llava-1.5-7b-hf'),
-                );
-                break;
-
-            case 'openwebui':
-                $this->provider = new filepond_ai_provider_openai_compatible(
-                    rex_config::get('filepond_uploader', 'openwebui_api_key', ''),
-                    rex_config::get('filepond_uploader', 'openwebui_base_url', ''),
-                    rex_config::get('filepond_uploader', 'openwebui_model', 'llava'),
-                );
-                break;
-
-            case 'gemini':
-            default:
-                $this->provider = new filepond_ai_provider_gemini(
-                    rex_config::get('filepond_uploader', 'gemini_api_key', ''),
-                    self::getGeminiModel(),
-                );
-                break;
-        }
-    }
-
-    /**
-     * Gibt das konfigurierte Gemini-Modell zurück, abgeschaltete Modelle
-     * bereits durch ihren Nachfolger ersetzt.
-     */
-    public static function getGeminiModel(): string
-    {
-        $model = rex_config::get('filepond_uploader', 'gemini_model', '');
-
-        return self::resolveGeminiModel(is_string($model) ? $model : '');
-    }
-
-    /**
-     * Leerer Wert => empfohlenes Modell, bekannte abgeschaltete IDs => Nachfolger.
-     * Liegt eine Live-Liste von Google vor und kennt Google das Modell nicht mehr,
-     * wird das empfohlene Modell der Live-Liste verwendet. Ohne Live-Liste bleiben
-     * unbekannte IDs unverändert.
-     */
-    public static function resolveGeminiModel(string $model): string
-    {
-        $model = trim($model);
-        $liveDefault = \FriendsOfRedaxo\FilePond\GeminiModelCatalog::getLiveDefault();
-        if ('' === $model) {
-            return $liveDefault ?? self::DEFAULT_GEMINI_MODEL;
+        if (!rex_addon::get('ai_platform')->isAvailable() || !class_exists(Service::class)) {
+            return null;
         }
 
-        $model = self::GEMINI_MODEL_REPLACEMENTS[$model] ?? $model;
-
-        $knownIds = \FriendsOfRedaxo\FilePond\GeminiModelCatalog::getKnownIds();
-        if (null !== $knownIds && null !== $liveDefault && !in_array($model, $knownIds, true)) {
-            return $liveDefault;
+        $service = Service::getInstance();
+        $candidates = [
+            (int) rex_config::get('filepond_uploader', 'ai_platform_profile_id', 0),
+            (int) rex_config::get('ai_platform', 'default_image_understanding_profile', 0),
+        ];
+        foreach ($candidates as $id) {
+            if ($id > 0 && 'image_understanding' === ($service->getProfile($id)['type'] ?? null)) {
+                return $id;
+            }
         }
 
-        return $model;
+        return null;
     }
 
     /**
-     * Gibt den aktuellen Provider zurück.
-     */
-    public static function getProvider(): string
-    {
-        return rex_config::get('filepond_uploader', 'ai_provider', 'gemini');
-    }
-
-    /**
-     * Prüft ob die AI-Funktion verfügbar ist.
+     * Prüft ob die AI-Funktion verfügbar ist (ai_platform mit passendem Profil).
      */
     public static function isAvailable(): bool
     {
-        // Wir erstellen eine Instanz, um die Konfiguration zu prüfen
-        // Das ist sauberer als hier die Config-Logik zu duplizieren
-        $generator = new self();
-        return $generator->provider->isConfigured();
+        return null !== self::getProfileId();
     }
 
     /**
@@ -168,10 +74,7 @@ class filepond_ai_alt_generator
      */
     public static function isEnabled(): bool
     {
-        $enabledRaw = rex_config::get('filepond_uploader', 'enable_ai_alt', '0');
-        $enabled = in_array($enabledRaw, [1, '1', true, 'true', '|1|'], true);
-
-        return $enabled && self::isAvailable();
+        return Config::isEnabled('enable_ai_alt') && self::isAvailable();
     }
 
     /**
@@ -183,11 +86,11 @@ class filepond_ai_alt_generator
      */
     public function generateAltText(string $filename, string $language = 'de'): array
     {
-        if (!$this->provider->isConfigured()) {
+        if (!self::isAvailable()) {
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'AI Provider nicht korrekt konfiguriert',
+                'error' => rex_i18n::msg('filepond_ai_not_available'),
             ];
         }
 
@@ -196,7 +99,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Datei nicht gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -205,7 +108,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Keine Bilddatei',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_no_image'),
             ];
         }
 
@@ -214,7 +117,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'SVG wird für AI-Analyse nicht unterstützt (Vektorformat ohne verlässliches Pixel-Rendering)',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_svg'),
             ];
         }
 
@@ -223,7 +126,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Datei nicht auf dem Server gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -240,11 +143,11 @@ class filepond_ai_alt_generator
      */
     public function generateAltTextFromPath(string $filePath, string $language = 'de', string $originalFilename = ''): array
     {
-        if (!$this->provider->isConfigured()) {
+        if (!self::isAvailable()) {
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'AI Provider nicht korrekt konfiguriert',
+                'error' => rex_i18n::msg('filepond_ai_not_available'),
             ];
         }
 
@@ -252,7 +155,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Datei nicht gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -264,7 +167,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'Keine Bilddatei',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_no_image'),
             ];
         }
 
@@ -272,7 +175,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_text' => '',
-                'error' => 'SVG-Dateien werden nicht unterstützt',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_svg'),
             ];
         }
 
@@ -287,11 +190,11 @@ class filepond_ai_alt_generator
      */
     public function generateAltTexts(string $filename, array $languages): array
     {
-        if (!$this->provider->isConfigured()) {
+        if (!self::isAvailable()) {
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'AI Provider nicht korrekt konfiguriert',
+                'error' => rex_i18n::msg('filepond_ai_not_available'),
             ];
         }
 
@@ -300,7 +203,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Datei nicht gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -308,7 +211,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Keine Bilddatei',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_no_image'),
             ];
         }
 
@@ -317,7 +220,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'SVG-Dateien werden nicht unterstützt',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_svg'),
             ];
         }
 
@@ -326,7 +229,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Datei nicht auf dem Server gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -341,11 +244,11 @@ class filepond_ai_alt_generator
      */
     public function generateAltTextsFromPath(string $filePath, array $languages): array
     {
-        if (!$this->provider->isConfigured()) {
+        if (!self::isAvailable()) {
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'AI Provider nicht korrekt konfiguriert',
+                'error' => rex_i18n::msg('filepond_ai_not_available'),
             ];
         }
 
@@ -353,7 +256,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Datei nicht gefunden',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_not_found'),
             ];
         }
 
@@ -365,7 +268,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'Keine Bilddatei',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_no_image'),
             ];
         }
 
@@ -373,7 +276,7 @@ class filepond_ai_alt_generator
             return [
                 'success' => false,
                 'alt_texts' => [],
-                'error' => 'SVG-Dateien werden nicht unterstützt',
+                'error' => rex_i18n::rawMsg('filepond_ai_err_svg'),
             ];
         }
 
@@ -410,41 +313,19 @@ class filepond_ai_alt_generator
             ];
         }
 
-        // Bild vorbereiten (Resize & Encoding)
         try {
-            $prepared = $this->prepareImage($filePath, true);
-            $base64Image = $prepared['data'];
-            $mimeType = $prepared['mime'];
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'alt_text' => '',
-                'error' => $e->getMessage(),
-            ];
-        }
-
-        // Max Tokens holen
-        $maxTokens = (int) rex_config::get('filepond_uploader', 'ai_max_tokens', 2048);
-        if ($maxTokens <= 0) {
-            $maxTokens = 2048;
-        }
-
-        // API Request via Provider
-        try {
-            $result = $this->provider->generate($base64Image, $mimeType, $prompt, $maxTokens);
-
-            $resolvedText = (string) ($result['text'] ?? '');
-            if ('' !== trim($resolvedText)) {
+            $resolvedText = trim($this->invoke($prompt, $filePath));
+            if ('' !== $resolvedText) {
                 $this->writeCache($cacheKey, ['alt_text' => $resolvedText]);
             }
 
             return [
                 'success' => true,
                 'alt_text' => $resolvedText,
-                'tokens' => $result['tokens'] ?? null,
+                'tokens' => null,
                 'error' => null,
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             return [
                 'success' => false,
                 'alt_text' => '',
@@ -509,25 +390,7 @@ class filepond_ai_alt_generator
         }
 
         try {
-            $prepared = $this->prepareImage($filePath, true);
-            $base64Image = $prepared['data'];
-            $mimeType = $prepared['mime'];
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'alt_texts' => [],
-                'error' => $e->getMessage(),
-            ];
-        }
-
-        $maxTokens = (int) rex_config::get('filepond_uploader', 'ai_max_tokens', 2048);
-        if ($maxTokens <= 0) {
-            $maxTokens = 2048;
-        }
-
-        try {
-            $result = $this->provider->generate($base64Image, $mimeType, $prompt, $maxTokens);
-            $allAltTexts = $this->parseMultiLanguageResponse((string) ($result['text'] ?? ''), $promptLanguages);
+            $allAltTexts = $this->parseMultiLanguageResponse($this->invoke($prompt, $filePath), $promptLanguages);
 
             $resolvedAltTexts = [];
             $fallbackText = $allAltTexts[$fallbackLanguage] ?? '';
@@ -564,10 +427,10 @@ class filepond_ai_alt_generator
                 'alt_texts' => $resolvedAltTexts,
                 'fallback_language' => $fallbackLanguage,
                 'blocked_languages_used' => $blockedLanguagesUsed,
-                'tokens' => $result['tokens'] ?? null,
+                'tokens' => null,
                 'error' => null,
             ];
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             return [
                 'success' => false,
                 'alt_texts' => [],
@@ -596,6 +459,37 @@ class filepond_ai_alt_generator
         }
 
         return $results;
+    }
+
+    /**
+     * Schickt das verkleinerte Bild mit dem Prompt an das ai_platform-Profil.
+     *
+     * @throws Exception
+     */
+    private function invoke(string $prompt, string $filePath): string
+    {
+        $profileId = self::getProfileId();
+        if (null === $profileId) {
+            throw new Exception(rex_i18n::msg('filepond_ai_not_available'));
+        }
+
+        $prepared = $this->prepareImage($filePath, true);
+        $extension = match ($prepared['mime']) {
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            default => 'jpg',
+        };
+        $tmpFile = rex_path::addonCache('filepond_uploader', 'ai_' . bin2hex(random_bytes(8)) . '.' . $extension);
+        if (!rex_file::put($tmpFile, (string) base64_decode($prepared['data'], true))) {
+            throw new Exception('Bild konnte nicht zwischengespeichert werden');
+        }
+
+        try {
+            return Service::getInstance()->understandImage($prompt, $tmpFile, $profileId);
+        } finally {
+            rex_file::delete($tmpFile);
+        }
     }
 
     /**
@@ -639,7 +533,7 @@ class filepond_ai_alt_generator
         }
 
         if ('image/svg+xml' === $mimeType) {
-            throw new Exception('SVG wird für AI-Analyse nicht unterstützt (Vektorformat ohne verlässliches Pixel-Rendering)');
+            throw new Exception(rex_i18n::rawMsg('filepond_ai_err_svg'));
         }
 
         $specialMimes = ['image/heic', 'image/heif', 'image/avif', 'image/webp'];
@@ -700,9 +594,6 @@ class filepond_ai_alt_generator
 
         $width = imagesx($image);
         $height = imagesy($image);
-        if ($width <= 0 || $height <= 0) {
-            return null;
-        }
 
         $targetWidth = $width;
         $targetHeight = $height;
@@ -763,9 +654,7 @@ class filepond_ai_alt_generator
                 $image = $image->getImage();
             }
 
-            if (method_exists($image, 'autoOrient')) {
-                $image->autoOrient();
-            }
+            $image->autoOrient();
 
             $image->thumbnailImage($maxDimension, $maxDimension, true, true);
             $image->stripImage();
@@ -773,7 +662,7 @@ class filepond_ai_alt_generator
             $image->setImageCompressionQuality(85);
 
             $blob = $image->getImageBlob();
-            if (!is_string($blob) || '' === $blob) {
+            if ('' === $blob) {
                 return null;
             }
 
@@ -1011,7 +900,7 @@ class filepond_ai_alt_generator
     }
 
     /**
-     * @param list<string> $languages
+     * @param array<mixed> $languages
      * @return list<string>
      */
     private function normalizeLanguageCodes(array $languages): array
@@ -1058,8 +947,7 @@ class filepond_ai_alt_generator
 
     private function isCacheEnabled(): bool
     {
-        $enabledRaw = rex_config::get('filepond_uploader', 'ai_result_cache_enabled', true);
-        return in_array($enabledRaw, [1, '1', true, 'true', '|1|'], true);
+        return Config::isEnabled('ai_result_cache_enabled', true);
     }
 
     private function getCacheTtlSeconds(): int
@@ -1080,25 +968,13 @@ class filepond_ai_alt_generator
      */
     private function buildCacheKey(string $mode, string $filePath, array $context): string
     {
-        $fileMtime = is_file($filePath) ? (int) filemtime($filePath) : 0;
-        $fileSize = is_file($filePath) ? (int) filesize($filePath) : 0;
-
-        $providerIdentity = [
-            'provider' => self::getProvider(),
-            'gemini_model' => self::getGeminiModel(),
-            'cloudflare_model' => (string) rex_config::get('filepond_uploader', 'cloudflare_model', ''),
-            'openwebui_model' => (string) rex_config::get('filepond_uploader', 'openwebui_model', ''),
-            'openwebui_base_url' => (string) rex_config::get('filepond_uploader', 'openwebui_base_url', ''),
-            'prompt_profile' => $this->getPromptProfile(),
-            'custom_prompt' => (string) rex_config::get('filepond_uploader', 'ai_alt_prompt', ''),
-        ];
-
+        // Inhalt statt Pfad: Uploads liegen unter wechselnden Temp-Pfaden.
         $payload = [
             'mode' => $mode,
-            'file_path' => $filePath,
-            'file_mtime' => $fileMtime,
-            'file_size' => $fileSize,
-            'provider' => $providerIdentity,
+            'file' => is_file($filePath) ? (string) sha1_file($filePath) : '',
+            'profile' => self::getProfileId(),
+            'prompt_profile' => $this->getPromptProfile(),
+            'custom_prompt' => (string) rex_config::get('filepond_uploader', 'ai_alt_prompt', ''),
             'context' => $context,
         ];
 
@@ -1179,22 +1055,7 @@ class filepond_ai_alt_generator
 
     private function getFallbackLanguageCode(): string
     {
-        $configured = rex_config::get('filepond_uploader', 'ai_fallback_language', 'en');
-        if (!is_string($configured)) {
-            return 'en';
-        }
-
-        $trimmed = trim($configured);
-        if ('' === $trimmed) {
-            return 'en';
-        }
-
-        $short = strtolower(substr($trimmed, 0, 2));
-        if (!preg_match('/^[a-z]{2}$/', $short)) {
-            return 'en';
-        }
-
-        return $short;
+        return Config::aiFallbackLanguage();
     }
 
     /**
@@ -1202,50 +1063,7 @@ class filepond_ai_alt_generator
      */
     private function getBlockedLanguageCodes(): array
     {
-        $configured = rex_config::get('filepond_uploader', 'ai_blocked_languages', '');
-        if (is_array($configured)) {
-            $parts = $configured;
-        } elseif (is_string($configured)) {
-            $trimmed = trim($configured);
-            if ('' === $trimmed) {
-                return [];
-            }
-
-            if (str_contains($trimmed, '|')) {
-                $parts = array_values(array_filter(explode('|', $trimmed), static fn (string $v): bool => '' !== $v));
-            } else {
-                $parts = preg_split('/[\s,;]+/', strtolower($trimmed));
-            }
-        } else {
-            return [];
-        }
-
-        if (!is_array($parts)) {
-            return [];
-        }
-
-        $normalized = [];
-        foreach ($parts as $part) {
-            if (!is_string($part) || '' === $part) {
-                continue;
-            }
-
-            $normalizedPart = strtolower(trim($part));
-            if ('' === $normalizedPart) {
-                continue;
-            }
-
-            $short = substr($normalizedPart, 0, 2);
-            if (!preg_match('/^[a-z]{2}$/', $short)) {
-                continue;
-            }
-
-            if (!in_array($short, $normalized, true)) {
-                $normalized[] = $short;
-            }
-        }
-
-        return $normalized;
+        return Config::aiBlockedLanguages();
     }
 
     /**
@@ -1263,7 +1081,7 @@ class filepond_ai_alt_generator
         }
 
         if (!str_starts_with($json, '{')) {
-            if (preg_match('/\{.*\}/s', $json, $matches) && isset($matches[0])) {
+            if (1 === preg_match('/\{.*\}/s', $json, $matches)) {
                 $json = $matches[0];
             }
         }
@@ -1320,12 +1138,22 @@ class filepond_ai_alt_generator
     }
 
     /**
-     * Testet die API-Verbindung.
+     * Prüft, ob ai_platform mit einem Profil für Bildverständnis bereitsteht.
      *
      * @return array{success: bool, message: string}
      */
     public function testConnection(): array
     {
-        return $this->provider->testConnection();
+        $profileId = self::getProfileId();
+        if (null === $profileId) {
+            return ['success' => false, 'message' => rex_i18n::msg('filepond_ai_not_available')];
+        }
+
+        $profile = Service::getInstance()->getProfile($profileId) ?? [];
+
+        return [
+            'success' => true,
+            'message' => rex_i18n::msg('filepond_ai_profile_ready', (string) ($profile['name'] ?? $profileId), (string) ($profile['model'] ?? '')),
+        ];
     }
 }

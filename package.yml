@@ -1,9 +1,9 @@
 package: filepond_uploader
-version: '2.11.0'
-author: 'KLXM Crossmedia GmbH'
-supportpage: https://github.com/KLXM/filepond_uploader
+version: '3.0.0'
+author: 'Friends Of REDAXO, KLXM Crossmedia GmbH (klxm.de), Thomas Skerbis'
+supportpage: https://github.com/FriendsOfREDAXO/filepond_uploader
 requires:
-    php: '>=8.1'
+    php: '>=8.4'
     redaxo: '^5.17.1'
     packages:
         yform: '>=4.0.0'
@@ -16,10 +16,16 @@ page:
             title: 'translate:filepond_uploader_upload',
             perm: filepond_uploader[upload]  
         }
-        settings: { 
-            title: 'translate:filepond_uploader_settings',
+        settings:
+            title: 'translate:filepond_uploader_settings'
             perm: admin
-        }
+            subpages:
+                upload: { title: 'translate:filepond_settings_tab_upload' }
+                images: { title: 'translate:filepond_settings_tab_images' }
+                metadata: { title: 'translate:filepond_settings_tab_metadata' }
+                mediapool: { title: 'translate:filepond_settings_tab_mediapool' }
+                ai: { title: 'translate:filepond_settings_tab_ai' }
+                system: { title: 'translate:filepond_settings_tab_system' }
         help: { 
             title: 'translate:help', 
             subPath: README.md, 
@@ -39,6 +45,7 @@ default_config:
     chunk_size: 5
     create_thumbnails: true
     server_image_processing: false
+    enable_image_editor: true
     always_show_meta: false
     replace_mediapool: false
     enable_mediapool_replace: true
@@ -53,7 +60,7 @@ default_config:
     enable_ai_alt: false
     enable_ai_upload_modal: true
     enable_ai_mediapool_detail: true
-    ai_provider: 'gemini'
+    ai_platform_profile_id: 0
     ai_target_field: 'med_alt'
     ai_prompt_profile: 'accessibility'
     ai_fallback_language: 'en'
@@ -62,10 +69,6 @@ default_config:
     ai_result_cache_ttl_hours: 168
     ai_max_image_dimension: 1024
     ai_alt_prompt: null
-    gemini_api_key: null
-    gemini_model: 'gemini-3.8-flash'
-    cloudflare_api_token: null
-    cloudflare_account_id: null
     items_per_page: 30
     required_metadata_fields: ''
     alt_checker_sort: 'createdate_desc'

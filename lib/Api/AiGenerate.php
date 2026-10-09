@@ -1,13 +1,30 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader\Api;
+
+use Throwable;
+use Exception;
+use rex_api_function;
+use rex_api_result;
+use rex_backend_login;
+use rex_config;
+use rex_path;
+use rex_plugin;
+use rex_request;
+use rex_response;
+use rex_ycom_auth;
+use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
+
 /**
  * API Endpoint für AI Alt-Text Generierung.
  *
  * @package filepond_uploader
  */
 
-class rex_api_filepond_ai_generate extends rex_api_function
+class AiGenerate extends rex_api_function
 {
+    use AuthorizesRequests;
+
     protected $published = true;
 
     /**
@@ -37,7 +54,7 @@ class rex_api_filepond_ai_generate extends rex_api_function
 
         foreach ($candidateFields as $field) {
             $files = rex_request::files($field, 'array', []);
-            if (!is_array($files) || [] === $files) {
+            if ([] === $files) {
                 continue;
             }
 
@@ -105,55 +122,31 @@ class rex_api_filepond_ai_generate extends rex_api_function
      * @param array<string, mixed> $data
      * @return never
      */
-    private function sendJson(array $data, int $statusCode = 200): never
+    private function sendJson(array $data, string $status = rex_response::HTTP_OK): never
     {
         rex_response::cleanOutputBuffers();
-        if (200 !== $statusCode) {
-            rex_response::setStatus($statusCode);
-        }
+        rex_response::setStatus($status);
         rex_response::sendJson($data);
         exit;
     }
 
-    private function isAuthorized(): bool
-    {
-        // Backend User Check
-        $isBackendUser = null !== rex_backend_login::createUser();
-
-        // Token Check (Request oder Session)
-        $apiToken = rex_config::get('filepond_uploader', 'api_token');
-        $apiTokenStr = is_string($apiToken) ? $apiToken : '';
-        $requestToken = rex_request('api_token', 'string', '');
-        $sessionToken = rex_session('filepond_token', 'string', '');
-
-        $isValidToken = ('' !== $apiTokenStr && '' !== $requestToken && hash_equals($apiTokenStr, $requestToken))
-            || ('' !== $apiTokenStr && '' !== $sessionToken && hash_equals($apiTokenStr, $sessionToken));
-
-        // YCom User Check
-        $isYComUser = false;
-        if (rex_plugin::get('ycom', 'auth')->isAvailable()) {
-            /** @phpstan-ignore class.notFound */
-            if (null !== rex_ycom_auth::getUser()) {
-                $isYComUser = true;
-            }
-        }
-
-        return $isBackendUser || $isValidToken || $isYComUser;
-    }
-
     public function execute(): rex_api_result
     {
-        // Berechtigung prüfen
-        if (!$this->isAuthorized()) {
+        // KI-Anfragen kosten Geld bzw. Rechenzeit: nur für Backend-User
+        try {
+            $this->authorize();
+        } catch (Throwable) {
             $this->sendJson(['success' => false, 'error' => 'Unauthorized'], rex_response::HTTP_UNAUTHORIZED);
+        }
+        if ('backend' !== $this->caller) {
+            $this->sendJson(['success' => false, 'error' => 'Unauthorized'], rex_response::HTTP_FORBIDDEN);
         }
 
         // Prüfen ob AI aktiviert ist
-        if (!filepond_ai_alt_generator::isEnabled()) {
+        if (!AltTextGenerator::isEnabled()) {
             $this->sendJson(['success' => false, 'error' => 'AI generation is disabled'], rex_response::HTTP_FORBIDDEN);
         }
 
-        $fileId = rex_request('file_id', 'string', '');
         $mediaName = rex_request('media_name', 'string', '');
         $language = rex_request('language', 'string', 'de');
         $languagesRaw = rex_request('languages', 'array', []);
@@ -176,7 +169,7 @@ class rex_api_filepond_ai_generate extends rex_api_function
             }
         }
 
-        $generator = new filepond_ai_alt_generator();
+        $generator = new AltTextGenerator();
         // Erneutes Erzeugen fuer bereits befuellte Felder: Ergebnis-Cache ueberspringen.
         $generator->setForceRefresh(rex_request('regenerate', 'bool', false));
         $result = ['success' => false, 'error' => 'Unknown error'];
@@ -198,11 +191,6 @@ class rex_api_filepond_ai_generate extends rex_api_function
                 $uploaded = $this->getUploadedFilePath();
                 if ('' !== $uploaded['path']) {
                     $filePath = $uploaded['path'];
-                }
-                // 2) Bereits vorbereitete temporäre Datei per file_id (Server-seitig)
-                elseif ('' !== $fileId) {
-                    $baseDir = rex_path::addonData('filepond_uploader', 'upload');
-                    $filePath = $baseDir . $fileId;
                 }
 
                 if ('' !== $filePath) {

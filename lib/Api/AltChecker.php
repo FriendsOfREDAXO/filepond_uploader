@@ -1,9 +1,21 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader\Api;
+
+use rex_i18n;
+use FriendsOfRedaxo\FilePondUploader\Helper;
+use rex;
+use Exception;
+use rex_api_function;
+use rex_api_result;
+use rex_response;
+use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
+use FriendsOfRedaxo\FilePondUploader\AltTextChecker;
+
 /**
  * API Endpoint für Alt-Text-Checker.
  */
-class rex_api_filepond_alt_checker extends rex_api_function
+class AltChecker extends rex_api_function
 {
     protected $published = false;  // Nur für eingeloggte Backend-User
 
@@ -14,7 +26,10 @@ class rex_api_filepond_alt_checker extends rex_api_function
         // Berechtigung prüfen
         $user = rex::getUser();
         if (!rex::isBackend() || null === $user || (!$user->isAdmin() && !$user->hasPerm('filepond_uploader[alt_checker]'))) {
-            $this->sendJson(['error' => 'Zugriff verweigert']);
+            $this->sendJson(['error' => rex_i18n::rawMsg('no_perm')], rex_response::HTTP_FORBIDDEN);
+        }
+        if (!Helper::isValidCsrfToken()) {
+            $this->sendJson(['error' => 'Invalid CSRF token'], rex_response::HTTP_FORBIDDEN);
         }
 
         $action = rex_request('action', 'string');
@@ -35,12 +50,6 @@ class rex_api_filepond_alt_checker extends rex_api_function
             case 'ai_generate':
                 $this->handleAiGenerate();
                 break;
-            case 'ai_bulk_generate':
-                $this->handleAiBulkGenerate();
-                break;
-            case 'ai_test':
-                $this->handleAiTest();
-                break;
             default:
                 $this->sendJson(['error' => 'Unbekannte Aktion']);
         }
@@ -50,10 +59,11 @@ class rex_api_filepond_alt_checker extends rex_api_function
     /**
      * @param array<string, mixed> $data
      */
-    private function sendJson(array $data): never
+    private function sendJson(array $data, string $status = rex_response::HTTP_OK): never
     {
-        rex_response::setHeader('Content-Type', 'application/json');
-        rex_response::sendContent((string) json_encode($data, JSON_UNESCAPED_UNICODE));
+        rex_response::cleanOutputBuffers();
+        rex_response::setStatus($status);
+        rex_response::sendJson($data);
         exit;
     }
 
@@ -72,15 +82,15 @@ class rex_api_filepond_alt_checker extends rex_api_function
 
         try {
             // Prüfen ob med_alt Feld existiert
-            if (!filepond_alt_text_checker::checkAltFieldExists()) {
+            if (!AltTextChecker::checkAltFieldExists()) {
                 $this->sendJson([
-                    'error' => 'Das Feld med_alt existiert nicht in der Medientabelle. Bitte lege es über MetaInfo an.',
+                    'error' => rex_i18n::rawMsg('alt_checker_field_missing_text'),
                     'field_missing' => true,
                 ]);
             }
 
-            $images = filepond_alt_text_checker::findImagesWithoutAlt($filters);
-            $stats = filepond_alt_text_checker::getStatistics();
+            $images = AltTextChecker::findImagesWithoutAlt($filters);
+            $stats = AltTextChecker::getStatistics();
 
             $this->sendJson([
                 'images' => $images,
@@ -94,15 +104,15 @@ class rex_api_filepond_alt_checker extends rex_api_function
     private function handleStats(): void
     {
         try {
-            if (!filepond_alt_text_checker::checkAltFieldExists()) {
+            if (!AltTextChecker::checkAltFieldExists()) {
                 $this->sendJson([
                     'error' => 'Das Feld med_alt existiert nicht',
                     'field_missing' => true,
                 ]);
             }
 
-            $stats = filepond_alt_text_checker::getStatistics();
-            $categories = filepond_alt_text_checker::getCategoriesWithMissingAlt();
+            $stats = AltTextChecker::getStatistics();
+            $categories = AltTextChecker::getCategoriesWithMissingAlt();
 
             $this->sendJson([
                 'stats' => $stats,
@@ -121,23 +131,23 @@ class rex_api_filepond_alt_checker extends rex_api_function
         $isMultilang = rex_request('is_multilang', 'bool', false);
 
         if ('' === $filename) {
-            $this->sendJson(['error' => 'Kein Dateiname angegeben']);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_filename')]);
         }
 
         // Dekoratives Bild: In Negativ-Liste aufnehmen
         if ($decorative) {
-            $result = filepond_alt_text_checker::markAsDecorative($filename);
+            $result = AltTextChecker::markAsDecorative($filename);
         } else {
             // Mehrsprachig: JSON-String zu Array konvertieren
             if ($isMultilang && '' !== $altText) {
                 $altData = json_decode($altText, true);
                 if (is_array($altData)) {
-                    $result = filepond_alt_text_checker::updateAltText($filename, $altData);
+                    $result = AltTextChecker::updateAltText($filename, $altData);
                 } else {
-                    $result = filepond_alt_text_checker::updateAltText($filename, $altText);
+                    $result = AltTextChecker::updateAltText($filename, $altText);
                 }
             } else {
-                $result = filepond_alt_text_checker::updateAltText($filename, $altText);
+                $result = AltTextChecker::updateAltText($filename, $altText);
             }
         }
 
@@ -155,10 +165,10 @@ class rex_api_filepond_alt_checker extends rex_api_function
         }
 
         if ([] === $updates) {
-            $this->sendJson(['error' => 'Keine Updates angegeben']);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_updates')]);
         }
 
-        $result = filepond_alt_text_checker::bulkUpdateAltText($updates);
+        $result = AltTextChecker::bulkUpdateAltText($updates);
         $this->sendJson($result);
     }
 
@@ -167,7 +177,7 @@ class rex_api_filepond_alt_checker extends rex_api_function
      */
     private function handleAiGenerate(): void
     {
-        if (!filepond_ai_alt_generator::isEnabled()) {
+        if (!AltTextGenerator::isEnabled()) {
             $this->sendJson(['error' => 'AI Alt-Text-Generierung ist nicht aktiviert oder API-Key fehlt']);
         }
 
@@ -176,10 +186,10 @@ class rex_api_filepond_alt_checker extends rex_api_function
         $languages = rex_request('languages', 'array', []);
 
         if ('' === $filename) {
-            $this->sendJson(['error' => 'Kein Dateiname angegeben']);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_filename')]);
         }
 
-        $generator = new filepond_ai_alt_generator();
+        $generator = new AltTextGenerator();
 
         $normalizedLanguages = [];
         foreach ($languages as $languageItem) {
@@ -202,52 +212,6 @@ class rex_api_filepond_alt_checker extends rex_api_function
         } else {
             $result = $generator->generateAltText($filename, $language);
         }
-
-        $this->sendJson($result);
-    }
-
-    /**
-     * AI Alt-Texte für mehrere Bilder generieren.
-     */
-    private function handleAiBulkGenerate(): void
-    {
-        if (!filepond_ai_alt_generator::isEnabled()) {
-            $this->sendJson(['error' => 'AI Alt-Text-Generierung ist nicht aktiviert oder API-Key fehlt']);
-        }
-
-        $filenamesRaw = rex_request('filenames', 'string', '');
-        $language = rex_request('language', 'string', 'de');
-
-        if ('' !== $filenamesRaw && '[' === $filenamesRaw[0]) {
-            $filenames = json_decode($filenamesRaw, true) ?? [];
-        } else {
-            $filenames = rex_request('filenames', 'array', []);
-        }
-
-        if ([] === $filenames) {
-            $this->sendJson(['error' => 'Keine Dateinamen angegeben']);
-        }
-
-        $generator = new filepond_ai_alt_generator();
-        $results = $generator->generateBulk($filenames, $language);
-
-        $this->sendJson([
-            'success' => true,
-            'results' => $results,
-        ]);
-    }
-
-    /**
-     * AI-Verbindung testen.
-     */
-    private function handleAiTest(): void
-    {
-        if (!filepond_ai_alt_generator::isAvailable()) {
-            $this->sendJson(['success' => false, 'message' => 'API-Key nicht konfiguriert']);
-        }
-
-        $generator = new filepond_ai_alt_generator();
-        $result = $generator->testConnection();
 
         $this->sendJson($result);
     }

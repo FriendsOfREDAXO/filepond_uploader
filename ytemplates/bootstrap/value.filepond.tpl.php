@@ -1,4 +1,6 @@
 <?php
+
+use FriendsOfRedaxo\FilePondUploader\Helper;
 /** @var rex_yform_value_filepond $this */
 
 $class       = $this->getElement('required') ? 'form-is-required ' : '';
@@ -96,17 +98,18 @@ $dataAltRequired = null !== $alt_required
     ? ($alt_required ? 'true' : 'false')
     : ($isEnabledConfig('alt_required_default', true) ? 'true' : 'false');
 
+// KI-Vorschläge nur im Backend, die KI-API nimmt nur Backend-User an
 $cfgAiEnabled = $isEnabledConfig('enable_ai_alt', false)
     && $isEnabledConfig('enable_ai_upload_modal', true);
-$dataAiEnabled = null !== $ai_enabled ? ($ai_enabled ? 'true' : 'false') : ($cfgAiEnabled ? 'true' : 'false');
+$dataAiEnabled = rex::isBackend() && (null !== $ai_enabled ? $ai_enabled : $cfgAiEnabled) ? 'true' : 'false';
 $cfgAiTargetFieldVal = rex_config::get('filepond_uploader', 'ai_target_field', 'med_alt');
 $dataAiTargetField = '' !== $ai_target_field
     ? $ai_target_field
     : (is_string($cfgAiTargetFieldVal) && '' !== trim($cfgAiTargetFieldVal) ? trim($cfgAiTargetFieldVal) : 'med_alt');
 
-if (class_exists('filepond_helper')) {
-    echo filepond_helper::getStyles();
-    echo filepond_helper::getScripts();
+if (class_exists(Helper::class)) {
+    echo Helper::getStyles();
+    echo Helper::getScripts();
 }
 ?>
 <div class="<?= $class_group ?>" id="<?= $this->getHTMLId() ?>">
@@ -114,24 +117,27 @@ if (class_exists('filepond_helper')) {
     
     <input type="hidden" 
        name="<?= $this->getFieldName() ?>" 
-       value="<?= $value ?>"
+       value="<?= rex_escape((string) $value) ?>"
        data-widget="filepond"
-       data-filepond-cat="<?= $dataCatId ?>"
-       data-filepond-maxfiles="<?= $dataMaxFiles ?>"
-       data-filepond-types="<?= $dataTypes ?>"
-       data-filepond-maxsize="<?= $dataMaxSize ?>"
-       data-filepond-lang="<?= $langCode ?>"
+       data-filepond-cat="<?= rex_escape((string) $dataCatId) ?>"
+      <?= Helper::widgetSecurityAttributes((int) $dataCatId, (string) $dataTypes, (int) $dataMaxSize) ?>
+       data-filepond-media-url="<?= rex_escape(rex_url::media()) ?>"
+       data-filepond-maxfiles="<?= rex_escape((string) $dataMaxFiles) ?>"
+       data-filepond-types="<?= rex_escape((string) $dataTypes) ?>"
+       data-filepond-maxsize="<?= rex_escape((string) $dataMaxSize) ?>"
+       data-filepond-lang="<?= rex_escape((string) $langCode) ?>"
+      <?= Helper::imageEditorAttribute() ?>
        data-filepond-skip-meta="<?= $skip_meta ? 'true' : 'false' ?>"
        data-filepond-chunk-enabled="<?= $chunk_enabled ? 'true' : 'false' ?>"
-       data-filepond-chunk-size="<?= $chunk_size ?>"
+       data-filepond-chunk-size="<?= rex_escape((string) $chunk_size) ?>"
        data-filepond-delayed-upload="<?= (1 === $delayed_upload || 2 === $delayed_upload) ? 'true' : 'false' ?>"
-       data-filepond-delayed-type="<?= $delayed_upload ?>"
-       data-filepond-title-required="<?= $dataTitleRequired ?>" 
-       data-filepond-alt-required="<?= $dataAltRequired ?>"
-       data-filepond-max-pixel="<?= $dataMaxPixel ?>" 
-       data-filepond-image-quality="<?= $dataQuality ?>" 
-       data-filepond-client-resize="<?= $dataClientResize ?>"
-         data-filepond-ai-enabled="<?= $dataAiEnabled ?>"
+       data-filepond-delayed-type="<?= rex_escape((string) $delayed_upload) ?>"
+       data-filepond-title-required="<?= rex_escape((string) $dataTitleRequired) ?>" 
+       data-filepond-alt-required="<?= rex_escape((string) $dataAltRequired) ?>"
+       data-filepond-max-pixel="<?= rex_escape((string) $dataMaxPixel) ?>" 
+       data-filepond-image-quality="<?= rex_escape((string) $dataQuality) ?>" 
+       data-filepond-client-resize="<?= rex_escape((string) $dataClientResize) ?>"
+         data-filepond-ai-enabled="<?= rex_escape((string) $dataAiEnabled) ?>"
          data-filepond-ai-target-field="<?= rex_escape($dataAiTargetField) ?>"
     />
     

@@ -1,6 +1,11 @@
 (function() {
-    // Tracking für bereits initialisierte Elemente
-    const initializedElements = new Set();
+    // Asset-Basis aus der eigenen Script-URL (funktioniert auch mit Unterverzeichnis-Installationen)
+    const assetsBase = (document.currentScript && document.currentScript.src)
+        ? document.currentScript.src.replace(/[^/?#]*(\?.*)?$/, '')
+        : '/assets/addons/filepond_uploader/';
+
+    // Tracking für bereits initialisierte Elemente (WeakSet: entfernte Knoten werden freigegeben)
+    const initializedElements = new WeakSet();
     
     // Globale Variable für den aktuellen Dateityp
     let currentFileType = null;
@@ -20,6 +25,8 @@
                 labelIdle: 'Dateien hierher ziehen oder <span class="filepond--label-action">durchsuchen</span>',
                 metaTitle: 'Metadaten für',
                 titleLabel: 'Titel:',
+                titleLangLabel: 'Titel (mehrsprachig):',
+                titleInternalHint: '(nur für interne Verwaltung)',
                 altLabel: 'Alt-Text:',
                 altNotice: 'Alternativtext für Screenreader und SEO',
                 decorativeLabel: 'Dekoratives Bild (kein Alt-Text erforderlich)',
@@ -35,6 +42,8 @@
                 resumeUpload: 'Upload fortsetzen',
                 uploadButton: 'Dateien hochladen',
                 aiSuggestBtn: 'AI-Vorschlag',
+                editImage: 'Bild bearbeiten',
+                invalidField: 'Bitte zuerst die abgelehnten Dateien entfernen.',
                 aiSuggestBusy: 'Erzeuge Vorschlag...',
                 aiSuggestError: 'AI-Vorschlag fehlgeschlagen',
                 aiSuggestInvalidResponse: 'ungültige Server-Antwort',
@@ -46,6 +55,8 @@
                 labelIdle: 'Drag & Drop your files or <span class="filepond--label-action">Browse</span>',
                 metaTitle: 'Metadata for',
                 titleLabel: 'Title:',
+                titleLangLabel: 'Title (multilingual):',
+                titleInternalHint: '(internal use only)',
                 altLabel: 'Alt Text:',
                 altNotice: 'Alternative text for screen readers and SEO',
                 decorativeLabel: 'Decorative Image (no alt text required)',
@@ -61,6 +72,8 @@
                 resumeUpload: 'Resume upload',
                 uploadButton: 'Upload files',
                 aiSuggestBtn: 'AI Suggest',
+                editImage: 'Edit image',
+                invalidField: 'Please remove the rejected files first.',
                 aiSuggestBusy: 'Generating suggestion...',
                 aiSuggestError: 'AI suggestion failed',
                 aiSuggestInvalidResponse: 'invalid server response',
@@ -80,6 +93,12 @@
             FilePondPluginImageResize,
             FilePondPluginImageTransform
         );
+        if (typeof FilePondPluginImageEdit !== 'undefined') {
+            FilePond.registerPlugin(FilePondPluginImageEdit);
+        }
+
+        // Bearbeitete Dateien aus dem Metadaten-Dialog, werden statt des Originals hochgeladen
+        const editedFiles = new WeakMap();
 
         // Funktion zum Konvertieren von Dateiendungen zu MIME-Types
         const extensionToMimeType = (extension) => {
@@ -199,7 +218,7 @@
         // mit "Startsprache gemaess Browser" per 302 um und der Upload bekam HTML statt JSON.
         const getBasePath = () => window.location.origin + window.location.pathname;
         const basePath = getBasePath();
-        const magicIconUrl = `${window.location.origin}/assets/addons/filepond_uploader/icons/magic.svg`;
+        const magicIconUrl = assetsBase + 'icons/magic.svg';
         // console.log('Basepath ermittelt:', basePath);
 
         // Hilfsfunktion: hängt – sofern auf der Seite vorhanden – die YCom-Media-Auth-Defaults
@@ -229,6 +248,16 @@
         window.filepondAppendYcomAuthDefaults = appendYcomAuthDefaults;
 
         document.querySelectorAll('input[data-widget="filepond"]').forEach(input => {
+            // CSRF-Token (Frontend: am Widget, Backend: rex.filepond_csrf) und signierte Kategorie
+            const csrfToken = () => input.dataset.filepondCsrf || (window.rex && window.rex.filepond_csrf) || '';
+            const appendSecurity = (formData) => {
+                formData.append('_csrf_token', csrfToken());
+                formData.append('category_sig', input.dataset.filepondCatSig || '');
+                formData.append('policy_types', input.dataset.filepondPolicyTypes || '');
+                formData.append('policy_maxsize', input.dataset.filepondPolicyMaxsize || '0');
+            };
+            const mediaUrl = input.dataset.filepondMediaUrl || '/media/';
+
             // Prüfen, ob das Element bereits initialisiert wurde
             if (initializedElements.has(input)) {
                // console.log('FilePond element already initialized, skipping:', input);
@@ -238,6 +267,7 @@
            // console.log('FilePond input element found:', input);
             const lang = input.dataset.filepondLang || document.documentElement.lang || 'de_de';
             const t = translations[lang] || translations['de_de'];
+            const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const replaceFileId = input.dataset.filepondReplaceFileId || '';
             const isReplaceMode = /^\d+$/.test(replaceFileId) && parseInt(replaceFileId, 10) > 0;
             const reloadOnSuccess = input.dataset.filepondReloadOnSuccess === 'true';
@@ -249,6 +279,10 @@
 
             const initialValue = input.value.trim();
             const skipMeta = input.dataset.filepondSkipMeta === 'true';
+            const imageEditor = window.FilePondImageEditor && input.dataset.filepondImageEditor !== 'false'
+                ? window.FilePondImageEditor
+                : null;
+            const imageQuality = parseInt(input.dataset.filepondImageQuality || '90', 10) || 90;
 
             input.style.display = 'none';
 
@@ -258,7 +292,9 @@
             input.parentNode.insertBefore(fileInput, input.nextSibling);
 
             // Standardwerte für die Chunk-Größe 
-            const CHUNK_SIZE = parseInt(input.dataset.filepondChunkSize || '1') * 1024 * 1024; // Konfigurierbare Größe (Default: 1MB)
+            // Chunk-Größe in Bytes; Werte bis 1024 stammen aus älteren Templates und sind MB
+            const chunkSizeAttr = parseInt(input.dataset.filepondChunkSize || '0', 10) || 0;
+            const CHUNK_SIZE = chunkSizeAttr > 1024 ? chunkSizeAttr : (chunkSizeAttr > 0 ? chunkSizeAttr : 5) * 1024 * 1024;
 
             // Wiederverwendbare Funktion für File Preview
             const createFilePreview = (file, container) => {
@@ -346,7 +382,7 @@
                         img.style.maxWidth = '100%';
                         img.style.maxHeight = '300px';
                         img.style.objectFit = 'contain';
-                        img.src = '/media/' + fileName;
+                        img.src = mediaUrl + fileName;
                         container.appendChild(img);
                     } else if (/\.(mp4|webm|ogg|mov|avi|wmv|flv|mkv)$/i.test(fileName)) {
                         const video = document.createElement('video');
@@ -359,7 +395,7 @@
                         video.style.backgroundColor = '#000';
                         video.style.borderRadius = '4px';
                         video.crossOrigin = 'anonymous'; // Für CORS falls nötig
-                        video.src = '/media/' + fileName;
+                        video.src = mediaUrl + fileName;
                         
                         video.onerror = (e) => {
                             console.error('Uploaded video loading error:', e);
@@ -495,7 +531,7 @@
             // Lädt MetaInfo-Felder über API (geteilter Promise, siehe metaInfoFieldsPromise)
             const loadMetaInfoFields = () => {
                 if (!metaInfoFieldsPromise) {
-                    metaInfoFieldsPromise = fetch('/redaxo/index.php?rex-api-call=filepond_auto_metainfo&action=get_fields', {
+                    metaInfoFieldsPromise = fetch(basePath + '?rex-api-call=filepond_auto_metainfo&action=get_fields&_csrf_token=' + encodeURIComponent(csrfToken()), {
                         method: 'GET',
                         headers: { 'X-Requested-With': 'XMLHttpRequest' }
                     })
@@ -534,9 +570,31 @@
                     previewContainer.className = 'simple-modal-preview';
                     
                     // Verwende die neue wiederverwendbare Preview-Funktion
-                    createFilePreview(file, previewContainer);
+                    createFilePreview(editedFiles.get(file) || file, previewContainer);
                     
                     previewCol.appendChild(previewContainer);
+
+                    if (imageEditor && imageEditor.isEditable(file)) {
+                        const editButton = document.createElement('button');
+                        editButton.type = 'button';
+                        editButton.className = 'btn btn-default btn-sm simple-modal-edit-image';
+                        editButton.innerHTML = '<i class="fa fa-crop" aria-hidden="true"></i> ';
+                        editButton.appendChild(document.createTextNode(t.editImage));
+                        editButton.addEventListener('click', async () => {
+                            const previous = editedFiles.get(file);
+                            const edited = await imageEditor.edit(file, {
+                                lang,
+                                quality: imageQuality,
+                                filename: originalFileName || file.name,
+                                initial: previous ? previous.fpEditorState : null
+                            });
+                            if (edited) {
+                                editedFiles.set(file, edited);
+                                createFilePreview(edited, previewContainer);
+                            }
+                        });
+                        previewCol.appendChild(editButton);
+                    }
 
                     // Form Container mit MetaInfo-Feldern
                     const formCol = document.createElement('div');
@@ -591,144 +649,6 @@
                 });
             };
             
-            // Standard-Dialog (Fallback)
-            const createStandardMetadataDialog = (file, existingMetadata = null) => {
-                return new Promise((resolve, reject) => {
-                    const form = document.createElement('div');
-                    form.className = 'simple-modal-grid';
-
-                    // Preview Container (verwendet neue Preview-Funktion)
-                    const previewCol = document.createElement('div');
-                    previewCol.className = 'simple-modal-col-4';
-                    const previewContainer = document.createElement('div');
-                    previewContainer.className = 'simple-modal-preview';
-                    
-                    // Verwende die neue wiederverwendbare Preview-Funktion
-                    createFilePreview(file, previewContainer);
-                    
-                    previewCol.appendChild(previewContainer);
-
-                    // Form Fields
-                    const formCol = document.createElement('div');
-                    formCol.className = 'simple-modal-col-8';
-                    
-                    // Prüfen, ob es sich um ein Bild handelt
-                    const isImage = file.type?.startsWith('image/') || 
-                                    (file instanceof File && file.type.startsWith('image/'));
-                    
-                    formCol.innerHTML = `
-                        <div class="simple-modal-form-group">
-                            <label for="title">${t.titleLabel}</label>
-                            <input type="text" id="title" name="title" class="simple-modal-input" required value="${existingMetadata?.title || ''}">
-                        </div>
-                        ${isImage ? `
-                        <div class="simple-modal-form-group" id="alt-text-group">
-                            <label for="alt">${t.altLabel}</label>
-                            <input type="text" id="alt" name="alt" class="simple-modal-input" required value="${existingMetadata?.alt || ''}">
-                            <div class="help-text">${t.altNotice}</div>
-                        </div>
-                        <div class="simple-modal-form-group">
-                            <div class="simple-modal-checkbox-wrapper">
-                                <input type="checkbox" id="decorative" name="decorative" class="simple-modal-checkbox" ${existingMetadata?.decorative ? 'checked' : ''}>
-                                <label for="decorative">${t.decorativeLabel}</label>
-                            </div>
-                            <div class="help-text">${t.decorativeNotice}</div>
-                        </div>
-                        ` : ''}
-                        <div class="simple-modal-form-group">
-                            <label for="copyright">${t.copyrightLabel}</label>
-                            <input type="text" id="copyright" name="copyright" class="simple-modal-input" value="${existingMetadata?.copyright || ''}">
-                        </div>
-                    `;
-
-                    form.appendChild(previewCol);
-                    form.appendChild(formCol);
-
-                    const modal = new SimpleModal();
-
-                    // Event-Handler für die "Dekorativ"-Checkbox, wenn vorhanden
-                    if (isImage) {
-                        setTimeout(() => {
-                            const decorativeCheckbox = form.querySelector('#decorative');
-                            const altInput = form.querySelector('#alt');
-                            const altGroup = form.querySelector('#alt-text-group');
-                            
-                            if (decorativeCheckbox && altInput && altGroup) {
-                                // Initialen Zustand setzen
-                                if (decorativeCheckbox.checked) {
-                                    altInput.removeAttribute('required');
-                                    altGroup.classList.add('disabled');
-                                    altInput.disabled = true;
-                                }
-                                
-                                // Event-Handler für Änderungen
-                                decorativeCheckbox.addEventListener('change', function() {
-                                    if (this.checked) {
-                                        // Wenn dekorativ, dann Alt-Text nicht erforderlich
-                                        altInput.removeAttribute('required');
-                                        altGroup.classList.add('disabled');
-                                        altInput.disabled = true;
-                                        // Alt-Text auf leer setzen (optional)
-                                        altInput.value = '';
-                                    } else {
-                                        // Wenn nicht dekorativ, Alt-Text erforderlich
-                                        altInput.setAttribute('required', 'required');
-                                        altGroup.classList.remove('disabled');
-                                        altInput.disabled = false;
-                                    }
-                                });
-                            }
-                        }, 100); // Kurze Verzögerung für DOM-Rendering
-                    }
-
-                    modal.show({
-                        title: `${t.metaTitle} ${file.filename || file.name || 'upload'}`,
-                        content: form,
-                        buttons: [
-                            {
-                                text: t.cancelBtn,
-                                closeModal: true,
-                                handler: () => reject(new Error('Metadata input cancelled'))
-                            },
-                            {
-                                text: t.saveBtn,
-                                primary: true,
-                                handler: () => {
-                                    const titleInput = form.querySelector('[name="title"]');
-                                    const altInput = form.querySelector('[name="alt"]');
-                                    const copyrightInput = form.querySelector('[name="copyright"]');
-                                    const decorativeCheckbox = form.querySelector('#decorative');
-                                    const isDecorative = decorativeCheckbox && decorativeCheckbox.checked;
-
-                                    // Alt-Text ist nur für Bilder erforderlich, die nicht als dekorativ markiert sind
-                                    // Bei anderen Dateitypen ist kein Alt-Text erforderlich
-                                    let isValid = titleInput.value;
-                                    
-                                    if (isImage && altInput && !isDecorative) {
-                                        // Nur bei Bildern, die nicht dekorativ sind, Alt-Text prüfen
-                                        isValid = isValid && altInput.value;
-                                    }
-
-                                    if (isValid) {
-                                        const metadata = {
-                                            title: titleInput.value,
-                                            alt: (isImage && altInput) ? (isDecorative ? '' : altInput.value) : '',
-                                            copyright: copyrightInput.value,
-                                            decorative: isDecorative || false
-                                        };
-                                        modal.close();
-                                        resolve(metadata);
-                                    } else {
-                                        if (!titleInput.value) titleInput.reportValidity();
-                                        if (isImage && !isDecorative && altInput && !altInput.value) altInput.reportValidity();
-                                    }
-                                }
-                            }
-                        ]
-                    });
-                });
-            };
-            
             // MetaInfo-Integration Hilfsfunktionen
             
             // Sortiert Felder in gewünschter Reihenfolge
@@ -748,30 +668,27 @@
                 return sorted;
             };
             
-            // Hilfsfunktion für Übersetzungen basierend auf aktueller Sprache
-            const getFieldTranslation = (fieldName, lang = 'de_de') => {
-                const translationMap = {
-                    'title': translations[lang]?.titleLabel || 'Titel:',
-                    'med_title_lang': 'Titel (Mehrsprachig):',
-                    'med_alt': translations[lang]?.altLabel || 'Alt-Text:',
-                    'med_copyright': translations[lang]?.copyrightLabel || 'Copyright:',
-                    'med_description': translations[lang]?.descriptionLabel || 'Beschreibung:'
-                };
-                return translationMap[fieldName] || null;
-            };
+            const getFieldTranslation = (fieldName) => ({
+                title: t.titleLabel,
+                med_title_lang: t.titleLangLabel,
+                med_alt: t.altLabel,
+                med_copyright: t.copyrightLabel,
+                med_description: t.descriptionLabel
+            })[fieldName] || null;
 
             const getAiMagicButtonMarkup = (fieldName, isImage) => {
                 if (!aiEnabled || fieldName !== aiTargetField || !isImage) {
                     return '';
                 }
 
-                return `<button type="button" class="btn btn-default btn-xs filepond-ai-magic-btn" data-ai-target="${fieldName}" style="margin-left:8px;"><img src="${magicIconUrl}" class="filepond-magic-icon" alt="" aria-hidden="true"> ${t.aiSuggestBtn}</button><span class="help-text" data-ai-status-for="${fieldName}" style="margin-left:8px;"></span>`;
+                return `<button type="button" class="btn btn-default btn-xs filepond-ai-magic-btn" data-ai-target="${esc(fieldName)}" style="margin-left:8px;"><img src="${magicIconUrl}" class="filepond-magic-icon" alt="" aria-hidden="true"> ${esc(t.aiSuggestBtn)}</button><span class="help-text" data-ai-status-for="${esc(fieldName)}" style="margin-left:8px;"></span>`;
             };
             
             // Erstellt HTML für ein MetaInfo-Feld
             const createFieldHTML = (field, existingMetadata, currentInput, modalId = '') => {
-                const fieldId = `field_${field.name}`;
-                const uniqueFieldId = modalId ? `${field.name}_${modalId}` : field.name;
+                const fieldName = esc(field.name);
+                const fieldId = `field_${fieldName}`;
+                const uniqueFieldId = modalId ? `${fieldName}_${modalId}` : fieldName;
                 const isImage = currentFileType && currentFileType.startsWith('image/');
                 let html = '';
                 
@@ -784,13 +701,12 @@
                 }
                 
                 // Übersetztes Label verwenden
-                const translatedLabel = getFieldTranslation(field.name) || field.label;
+                const translatedLabel = esc(getFieldTranslation(field.name) || field.label);
                 
                 if (field.multilingual && field.languages && field.languages.length > 0) {
                     // Mehrsprachiges Feld mit Tabs
-                    const uniqueFieldId = modalId ? `${field.name}_${modalId}` : field.name;
                     
-                    html += `<div class="simple-modal-form-group" data-field="${field.name}">`;
+                    html += `<div class="simple-modal-form-group" data-field="${fieldName}">`;
                     html += `<label class="simple-modal-label">`;
                     html += `<i class="fa fa-globe"></i> ${translatedLabel}`;
                     html += `</label>`;
@@ -802,15 +718,7 @@
                         html += `<div class="decorative-checkbox-group">`;
                         html += `<label for="${decorativeCheckboxId}" class="simple-modal-checkbox-label">`;
                         html += `<input type="checkbox" id="${decorativeCheckboxId}" class="decorative-checkbox-global">`;
-                        html += `${translations.de_de.decorativeLabel}`; // Fallback auf de_de, besser wäre widget.translations... aber t.decorativeLabel ist oben definiert? Nein, t ist in createMetadataDialog scope.
-                        // Wir haben keinen Zugriff auf t hier, da createFieldHTML nicht im Scope von t ist?
-                        // Warte, createFieldHTML ist im IIFE scope definiert. t wäre im createMetadataDialog scope.
-                        // Aber createFieldHTML wird in createEnhancedMetadataDialog aufgerufen, welches auch nicht im Scope von t ist?
-                        // DOCH! createEnhancedMetadataDialog ist im InitFilePond Scope. t ist im InitFilePond definiert.
-                        // createFieldHTML ist im initFilePond definiert. Also sollte t verfügbar sein?
-                        // Ja, wenn t im Outer Scope definiert ist.
-                        // Aber ich sehe const t = ... am Anfang von initFilePond.
-                        // Und createFieldHTML ist am Ende.
+                        html += esc(t.decorativeLabel);
                         html += `</label>`;
                         html += `</div>`;
                     }
@@ -822,14 +730,15 @@
                     html += `<div class="fp-tabs-nav" style="display: flex; border-bottom: 1px solid var(--modal-color-border, #ccc); background: var(--modal-color-footer, rgba(0,0,0,0.05));">`;
                     
                     field.languages.forEach((lang, index) => {
+                        const langCode = esc(lang.code);
                         const isActive = index === 0 ? 'active' : '';
                         // Inline styles für Buttons mit CSS Variables
                         const activeStyle = index === 0 ? 
                             'font-weight: bold; background: var(--modal-color-bg, #fff); border-bottom: 2px solid #4b9ad9; color: var(--modal-color-text, inherit); opacity: 1;' : 
                             'opacity: 0.7; border-bottom: 2px solid transparent; color: var(--modal-color-text, inherit);';
                         
-                        html += `<button type="button" class="fp-tab-btn ${isActive}" data-group="${uniqueFieldId}" data-lang="${lang.code}" style="border: none; background: transparent; padding: 8px 12px; cursor: pointer; font-size: 12px; margin-bottom: -1px; ${activeStyle}">`;
-                        html += lang.code.toUpperCase();
+                        html += `<button type="button" class="fp-tab-btn ${isActive}" data-group="${uniqueFieldId}" data-lang="${langCode}" style="border: none; background: transparent; padding: 8px 12px; cursor: pointer; font-size: 12px; margin-bottom: -1px; ${activeStyle}">`;
+                        html += esc(lang.code.toUpperCase());
                         html += `</button>`;
                     });
                     
@@ -840,9 +749,10 @@
                     
                     for (const lang of field.languages) {
                         const displayStyle = field.languages.indexOf(lang) === 0 ? 'block' : 'none';
-                        const langValue = existingMetadata?.[field.name]?.[lang.code] || '';
+                        const langValue = esc(existingMetadata?.[field.name]?.[lang.code] || '');
+                        const langCode = esc(lang.code);
                         
-                        html += `<div class="fp-tab-pane" id="tab_${uniqueFieldId}_${lang.code}" style="display: ${displayStyle};">`;
+                        html += `<div class="fp-tab-pane" id="tab_${uniqueFieldId}_${langCode}" style="display: ${displayStyle};">`;
                         
                         // Required-Attribut Logic
                         let langRequired = '';
@@ -854,11 +764,11 @@
                         const langDisabled = (field.name === 'med_alt' && isImage && altRequiredByDefault) ? 'data-decorative-target="true"' : '';
                         
                         if (field.type === 'textarea') {
-                            html += `<textarea class="simple-modal-input" name="${field.name}[${lang.code}]" `;
-                            html += `data-field="${field.name}" data-lang="${lang.code}" rows="3" ${langRequired} ${langDisabled}>${langValue}</textarea>`;
+                            html += `<textarea class="simple-modal-input" name="${fieldName}[${langCode}]" `;
+                            html += `data-field="${fieldName}" data-lang="${langCode}" rows="3" ${langRequired} ${langDisabled}>${langValue}</textarea>`;
                         } else {
-                            html += `<input type="text" class="simple-modal-input" name="${field.name}[${lang.code}]" `;
-                            html += `data-field="${field.name}" data-lang="${lang.code}" value="${langValue}" ${langRequired} ${langDisabled}>`;
+                            html += `<input type="text" class="simple-modal-input" name="${fieldName}[${langCode}]" `;
+                            html += `data-field="${fieldName}" data-lang="${langCode}" value="${langValue}" ${langRequired} ${langDisabled}>`;
                         }
                         html += `</div>`;
                     }
@@ -869,11 +779,11 @@
 
                 } else {
                     // Standard-Feld
-                    html += `<div class="simple-modal-form-group" data-field="${field.name}">`;
+                    html += `<div class="simple-modal-form-group" data-field="${fieldName}">`;
                     html += `<label for="${fieldId}" class="simple-modal-label">${translatedLabel}`;
                     
                     if (field.name === 'title') {
-                        html += ` <small class="text-muted">(nur für interne Verwaltung)</small>`;
+                        html += ` <small class="text-muted">${esc(t.titleInternalHint)}</small>`;
                     }
                     
                     html += `</label>`;
@@ -881,7 +791,7 @@
                     
                     // Globale dekorative Checkbox wird nur einmal angezeigt (bei mehrsprachigen Feldern)
                     
-                    const fieldValue = existingMetadata?.[field.name] || '';
+                    const fieldValue = esc(existingMetadata?.[field.name] || '');
                     
                     // Required-Attribut für verschiedene Felder
                     let isRequired = '';
@@ -900,11 +810,11 @@
                     const isDisabled = (field.name === 'med_alt' && isImage && altRequiredByDefault) ? 'data-decorative-target="true"' : '';
                     
                     if (field.type === 'textarea') {
-                        html += `<textarea id="${fieldId}" name="${field.name}" class="simple-modal-input" `;
-                        html += `data-field="${field.name}" rows="3" ${isRequired} ${isDisabled}>${fieldValue}</textarea>`;
+                        html += `<textarea id="${fieldId}" name="${fieldName}" class="simple-modal-input" `;
+                        html += `data-field="${fieldName}" rows="3" ${isRequired} ${isDisabled}>${fieldValue}</textarea>`;
                     } else {
-                        html += `<input type="text" id="${fieldId}" name="${field.name}" class="simple-modal-input" `;
-                        html += `data-field="${field.name}" value="${fieldValue}" ${isRequired} ${isDisabled}>`;
+                        html += `<input type="text" id="${fieldId}" name="${fieldName}" class="simple-modal-input" `;
+                        html += `data-field="${fieldName}" value="${fieldValue}" ${isRequired} ${isDisabled}>`;
                     }
                     
                     html += `</div>`;
@@ -1041,6 +951,7 @@
                             requestData.append('regenerate', regenerate ? '1' : '0');
                             requestData.append('language', languageCode);
                             requestData.append('rex-api-call', 'filepond_ai_generate');
+                            requestData.append('_csrf_token', csrfToken());
 
                             const response = await fetch(basePath, {
                                 method: 'POST',
@@ -1077,6 +988,7 @@
                                 requestData.append('languages[]', code);
                             });
                             requestData.append('rex-api-call', 'filepond_ai_generate');
+                            requestData.append('_csrf_token', csrfToken());
 
                             const response = await fetch(basePath, {
                                 method: 'POST',
@@ -1428,31 +1340,9 @@
             // Speichert erweiterte Metadaten über unsere API
             const saveEnhancedMetadata = async (file, metadata, modal, resolve, reject) => {
                 try {
-                    // Wenn Datei bereits hochgeladen ist (serverId vorhanden)
-                    if (file.serverId) {
-                        const formData = new FormData();
-                        formData.append('file_id', file.serverId);
-                        formData.append('metadata', JSON.stringify(metadata));
-                        
-                        const response = await fetch('/redaxo/index.php?rex-api-call=filepond_auto_metainfo&action=save_metadata', {
-                            method: 'POST',
-                            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                            body: formData
-                        });
-                        
-                        const result = await response.json();
-                        if (result.success) {
-                            modal.close();
-                            resolve(metadata);
-                        } else {
-                            throw new Error(result.error || 'Fehler beim Speichern');
-                        }
-                    } else {
-                        // Datei noch nicht hochgeladen - speichere Metadaten für späteren Upload
-                        file.metaInfo = metadata;
-                        modal.close();
-                        resolve(metadata);
-                    }
+                    file.metaInfo = metadata;
+                    modal.close();
+                    resolve(metadata);
                 } catch (error) {
                     console.error('Fehler beim Speichern der erweiterten Metadaten:', error);
                     alert('Fehler beim Speichern: ' + error.message);
@@ -1471,7 +1361,7 @@
                             // poster nur bei videos setzen
                             ...(file.type?.startsWith('video/') ? {
                                 metadata: {
-                                    poster: '/media/' + file
+                                    poster: mediaUrl + file
                                 }
                             } : {})
                         }
@@ -1479,16 +1369,20 @@
                 }) : [];
 
             // Funktion zum Verarbeiten des Chunk-Uploads mit verbesserter Fehlerbehandlung
-            const processFileInChunks = async (fieldName, file, metadata, load, error, progress, abort, transfer, options, originalFileName) => {
+            const processFileInChunks = async (fieldName, file, metadata, load, error, progress, abort, transfer, options, originalFileName, outerSignal) => {
                 // originalFileName wird vom process-Callback übergeben (Blob-safe)
                 const safeFileName = originalFileName || file.name || 'upload';
                 let fileId;
                 const abortController = new AbortController();
+                if (outerSignal) {
+                    outerSignal.addEventListener('abort', () => abortController.abort(), { once: true });
+                }
 
                 try {
                     // 1. Metadaten senden und Upload vorbereiten
                     const prepareFormData = new FormData();
                     prepareFormData.append('rex-api-call', 'filepond_uploader');
+                    appendSecurity(prepareFormData);
                     prepareFormData.append('func', 'prepare');
                     prepareFormData.append('fileName', safeFileName);
                     prepareFormData.append('fieldName', fieldName);
@@ -1522,6 +1416,9 @@
                             // Kurze Pause nach erfolgreicher Vorbereitung, damit Metadaten gespeichert werden können
                             await new Promise(resolve => setTimeout(resolve, 500));
                         } catch (err) {
+                            if (err.name === 'AbortError') {
+                                throw err;
+                            }
                             prepareAttempts++;
                             console.warn(`Preparation attempt ${prepareAttempts} failed: ${err.message}`);
 
@@ -1552,6 +1449,7 @@
                             const formData = new FormData();
                             formData.append(fieldName, chunk);
                             formData.append('rex-api-call', 'filepond_uploader');
+                            appendSecurity(formData);
                             formData.append('func', 'chunk-upload');
                             formData.append('fileId', fileId);
                             formData.append('fieldName', fieldName);
@@ -1587,22 +1485,14 @@
                                     throw new Error(`Unexpected response: ${JSON.stringify(result)}`);
                                 }
                             } catch (err) {
-                                console.error(`Chunk ${chunkIndex} upload failed: ${err.message}`);
-                                reject(err);  // Fehler beim Hochladen des Chunks
+                                reject(err);
                             }
                         });
                     };
 
                     // Sequentielles Hochladen der Chunks mit Promises
                     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-                        try {
-                            await uploadChunk(chunkIndex);
-                        } catch (err) {
-                            console.error(`Upload failed at chunk ${chunkIndex}: ${err.message}`);
-                            error(`Upload failed: ${err.message}`);
-                            abort();
-                            return;
-                        }
+                        await uploadChunk(chunkIndex);
                     }
 
                     // Wenn alle Chunks erfolgreich hochgeladen wurden
@@ -1611,6 +1501,7 @@
                     // Umstellung auf finale direkte Anfrage statt weiteren Chunk-Upload
                     const finalFormData = new FormData();
                     finalFormData.append('rex-api-call', 'filepond_uploader');
+                    appendSecurity(finalFormData);
                     finalFormData.append('func', 'finalize-upload'); // Neue Funktion zum Finalisieren
                     finalFormData.append('fileId', fileId);
                     finalFormData.append('fieldName', fieldName);
@@ -1627,7 +1518,8 @@
                         headers: {
                             'X-Requested-With': 'XMLHttpRequest'
                         },
-                        body: finalFormData
+                        body: finalFormData,
+                        signal: abortController.signal
                     });
                     
                     if (!lastChunkResponse.ok) {
@@ -1650,20 +1542,20 @@
                     }
 
                 } catch (err) {
-                    if (err.name === 'AbortError') {
-                        abort();
-                    } else {
+                    // Bereits übertragene Chunks serverseitig verwerfen (nur eigene, siehe func=cancel)
+                    if (fileId) {
+                        const cancelData = new FormData();
+                        cancelData.append('rex-api-call', 'filepond_uploader');
+                        appendSecurity(cancelData);
+                        cancelData.append('func', 'cancel');
+                        cancelData.append('fileId', fileId);
+                        fetch(basePath, { method: 'POST', body: cancelData, headers: { 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
+                    }
+                    if (err.name !== 'AbortError') {
                         console.error('Chunk upload error:', err);
                         error('Upload failed: ' + err.message);
                     }
                 }
-
-                return {
-                    abort: () => {
-                        abortController.abort();
-                        abort();
-                    }
-                };
             };
 
             // Initialize FilePond
@@ -1692,7 +1584,10 @@
                 
                 server: {
                     url: basePath,
-                    process: async (fieldName, file, metadata, load, error, progress, abort, transfer, options) => {
+                    // Synchron {abort} zurückgeben, sonst kann FilePond einen laufenden Upload nicht abbrechen
+                    process: (fieldName, file, metadata, load, error, progress, abort, transfer, options) => {
+                        const processController = new AbortController();
+                        (async () => {
                         try {
                             // Originalen Dateinamen ermitteln - wichtig für Blob-Objekte
                             // nach Image Transform Plugin (Blob hat kein .name)
@@ -1713,17 +1608,21 @@
                                 };
                             }
 
+                            // Im Dialog bearbeitetes Bild statt des Originals hochladen
+                            const uploadFile = editedFiles.get(file) || file;
+
                             // Entscheiden, ob normaler Upload oder Chunk-Upload
-                            const useChunks = input.dataset.filepondChunkEnabled !== 'false' && file.size > CHUNK_SIZE;
+                            const useChunks = input.dataset.filepondChunkEnabled !== 'false' && uploadFile.size > CHUNK_SIZE;
 
                             if (useChunks) {
                                 // Großer File - Chunk Upload
-                                return processFileInChunks(fieldName, file, fileMetadata, load, error, progress, abort, transfer, options, originalFileName);
+                                await processFileInChunks(fieldName, uploadFile, fileMetadata, load, error, progress, abort, transfer, options, originalFileName, processController.signal);
+                                return;
                             } else {
                                 // Standard Upload für kleine Dateien
                                 const formData = new FormData();
-                                formData.append(fieldName, file, originalFileName);
                                 formData.append('rex-api-call', 'filepond_uploader');
+                                appendSecurity(formData);
                                 formData.append('func', 'prepare');
                                 formData.append('fileName', originalFileName);
                                 formData.append('fieldName', fieldName);
@@ -1736,7 +1635,8 @@
                                     headers: {
                                         'X-Requested-With': 'XMLHttpRequest'
                                     },
-                                    body: formData
+                                    body: formData,
+                                    signal: processController.signal
                                 });
 
                                 if (!prepareResponse.ok) {
@@ -1750,8 +1650,9 @@
 
                                 // Eigentlicher Upload
                                 const uploadFormData = new FormData();
-                                uploadFormData.append(fieldName, file, originalFileName);
+                                uploadFormData.append(fieldName, uploadFile, originalFileName);
                                 uploadFormData.append('rex-api-call', 'filepond_uploader');
+                                appendSecurity(uploadFormData);
                                 uploadFormData.append('func', 'upload');
                                 uploadFormData.append('fileId', fileId);
                                 uploadFormData.append('fieldName', fieldName);
@@ -1765,7 +1666,8 @@
                                     headers: {
                                         'X-Requested-With': 'XMLHttpRequest'
                                     },
-                                    body: uploadFormData
+                                    body: uploadFormData,
+                                    signal: processController.signal
                                 });
 
                                 if (!response.ok) {
@@ -1790,6 +1692,9 @@
                                 }
                             }
                         } catch (err) {
+                            if (err.name === 'AbortError') {
+                                return;
+                            }
                             if (err.message !== 'Metadata input cancelled') {
                                 console.error('Upload error:', err);
                                 error('Upload failed: ' + err.message);
@@ -1828,6 +1733,14 @@
                                 });
                             }
                         }
+                        })();
+
+                        return {
+                            abort: () => {
+                                processController.abort();
+                                abort();
+                            }
+                        };
                     },
                     revert: {
                         method: 'POST',
@@ -1836,13 +1749,14 @@
                         },
                         ondata: (formData) => {
                             formData.append('rex-api-call', 'filepond_uploader');
+                            appendSecurity(formData);
                             formData.append('func', 'delete');
                             formData.append('filename', formData.get('serverId'));
                             return formData;
                         }
                     },
                     load: (source, load, error, progress, abort, headers) => {
-                        const url = '/media/' + source.replace(/^"|"$/g, '');
+                        const url = mediaUrl + source.replace(/^"|"$/g, '');
                         // console.log('FilePond load url:', url);
 
                         fetch(url)
@@ -1868,6 +1782,7 @@
                     }
                 },
                 labelIdle: t.labelIdle,
+                labelInvalidField: t.invalidField,
                 styleButtonRemoveItemPosition: 'right',
                 styleLoadIndicatorPosition: 'right',
                 styleProgressIndicatorPosition: 'right',
@@ -1888,17 +1803,62 @@
                 
                 // Clientseitige Bildtransformation
                 // Standardmäßig deaktiviert, muss explizit mit data-filepond-client-resize="true" aktiviert werden
-                allowImageTransform: input.dataset.filepondClientResize === 'true',
+                allowImageTransform: input.dataset.filepondClientResize === 'true' || !!imageEditor,
                 imageTransformOutputQuality: parseInt(input.dataset.filepondImageQuality || '90'),
                 imageTransformOutputQualityMode: 'optional', // Nur komprimieren wenn auch resize nötig
                 imageTransformOutputStripImageHead: false, // EXIF-Daten behalten (Orientation wird separat gehandhabt)
                 
                 // EXIF-Orientierung
-                allowImageExifOrientation: true
+                allowImageExifOrientation: true,
+
+                // Bildeditor am Dateieintrag (vor dem Upload, d. h. bei verzögertem Upload)
+                allowImageEdit: !!imageEditor && input.dataset.filepondDelayedUpload === 'true',
+                imageEditInstantEdit: false,
+                imageEditEditor: imageEditor ? imageEditor.createFilePondEditor({ lang }) : null
             });
             
             // Speichere Referenz auf pond-Instanz im input-Element
             input.pondInstance = pond;
+
+            // Hochgeladenen Dateinamen in den Feldwert übernehmen (bei maxFiles=1 ersetzen)
+            const rememberServerId = (serverId) => {
+                if ((parseInt(input.dataset.filepondMaxfiles) || 30) === 1) {
+                    input.value = serverId;
+                    return;
+                }
+                const currentValue = input.value ? input.value.split(',').filter(Boolean) : [];
+                if (!currentValue.includes(serverId)) {
+                    currentValue.push(serverId);
+                    input.value = currentValue.join(',');
+                }
+            };
+
+            // Abgelehnte Dateien (Typ, Größe) blockieren das Absenden; der Browser kann seinen Hinweis
+            // am versteckten Datei-Input nicht anzeigen, daher ein sichtbarer Hinweis am Feld
+            const hostForm = input.form || pond.element.closest('form');
+            if (hostForm) {
+                let invalidNotice = null;
+                const hasRejectedFiles = () => pond.getFiles().some(item => item.status === FilePond.FileStatus.LOAD_ERROR);
+                hostForm.addEventListener('invalid', (event) => {
+                    if (!pond.element.contains(event.target)) {
+                        return;
+                    }
+                    if (!invalidNotice) {
+                        invalidNotice = document.createElement('div');
+                        invalidNotice.className = 'filepond-invalid-notice';
+                        invalidNotice.setAttribute('role', 'alert');
+                        invalidNotice.textContent = t.invalidField;
+                        pond.element.insertAdjacentElement('afterend', invalidNotice);
+                    }
+                    pond.element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }, true);
+                pond.on('removefile', () => {
+                    if (invalidNotice && !hasRejectedFiles()) {
+                        invalidNotice.remove();
+                        invalidNotice = null;
+                    }
+                });
+            }
             
             // Speichere die Referenz auch im DOM-Element, um sie später leichter zu finden
             const pondRoot = pond.element.parentNode;
@@ -1944,9 +1904,9 @@
                     uploadBtn.addEventListener('click', function(e) {
                         e.preventDefault();
                         
-                        console.log('Upload button clicked for input:', input.id);
                         if (pond && typeof pond.processFiles === 'function') {
-                            pond.processFiles();
+                            // Fehler und Abbrüche zeigt FilePond am Eintrag an
+                            pond.processFiles().catch(() => {});
                         }
                     });
 
@@ -1954,22 +1914,41 @@
                     // Upload via Formular Submit
 
                     const formEl = pondRoot.closest('form');
+                    if (formEl) {
+                        formEl.addEventListener('submit', function (e) {
+                            // Nur gültige, noch nicht hochgeladene Dateien; abgelehnte (z. B. zu groß) zeigen ihren Fehler bereits
+                            const pending = pond.getFiles().filter(item =>
+                                item.origin === FilePond.FileOrigin.INPUT
+                                && (item.status === FilePond.FileStatus.IDLE || item.status === FilePond.FileStatus.PROCESSING_ERROR)
+                            );
+                            if (pending.length === 0) {
+                                return;
+                            }
 
-                    // Event-Listener für Submit
-                    formEl.addEventListener('submit', function(e) {
-                        e.preventDefault();
-
-                        console.log('Upload triggered for input:', input.id);
-                        if (pond && typeof pond.processFiles === 'function') {
-
-                        pond.on('processfiles', () => {
-                            console.log('All files uploaded');
-                            formEl.submit();
+                            e.preventDefault();
+                            // Mehrere Felder im selben Formular: erst absenden, wenn alle fertig sind
+                            formEl.filepondPending = formEl.filepondPending || new Set();
+                            const submitter = e.submitter || null;
+                            const upload = pond.processFiles(pending.map(item => item.id));
+                            formEl.filepondPending.add(upload);
+                            upload.then((items) => {
+                                // processfile feuert erst nach dem Promise, Werte daher direkt übernehmen
+                                (items || []).forEach(item => item.serverId && rememberServerId(item.serverId));
+                                formEl.filepondPending.delete(upload);
+                                if (formEl.filepondPending.size === 0) {
+                                    // requestSubmit behält den geklickten Button (z. B. YForm "übernehmen")
+                                    if (typeof formEl.requestSubmit === 'function') {
+                                        formEl.requestSubmit(submitter && submitter.form === formEl ? submitter : undefined);
+                                    } else {
+                                        HTMLFormElement.prototype.submit.call(formEl);
+                                    }
+                                }
+                            }).catch(() => {
+                                // Fehler oder abgebrochener Metadaten-Dialog: Formular bleibt offen
+                                formEl.filepondPending.delete(upload);
+                            });
                         });
-
-                        pond.processFiles();
-                        }  
-                    });
+                    }
 
                     }
             }
@@ -1989,23 +1968,9 @@
             // Event handlers
             pond.on('processfile', (error, file) => {
                 if (!error && file.serverId) {
-                    // Prüfen, ob maxFiles=1 ist - in diesem Fall ersetzen wir den kompletten Wert
-                    const maxFiles = parseInt(input.dataset.filepondMaxfiles) || 30;
-                    
-                    if (maxFiles === 1) {
-                        // Bei maxFiles=1 kompletten Wert ersetzen statt anzuhängen
-                        input.value = file.serverId;
-                    } else {
-                        // Standardverhalten: An bestehenden Wert anhängen
-                        const currentValue = input.value ? input.value.split(',').filter(Boolean) : [];
-                        if (!currentValue.includes(file.serverId)) {
-                            currentValue.push(file.serverId);
-                            input.value = currentValue.join(',');
-                        }
-                    }
+                    rememberServerId(file.serverId);
 
-                    // Debug Ausgabe (nur wenn debug mode im Browser aktiviert ist, kann man hier einkommentieren)
-                    // console.log('FilePond update: ', input.value);
+                    input.dispatchEvent(new CustomEvent('filepond:uploaded', { bubbles: true, detail: { filename: file.serverId } }));
                     
                     // Versuchen, den Dateinamen in der FilePond-UI zu aktualisieren
                     try {
@@ -2050,7 +2015,7 @@
 
             pond.on('reorderfiles', (files) => {
                 const newValue = files
-                    .map(file => file.serverId || file.source)
+                    .map(file => (typeof file.serverId === 'string' ? file.serverId : (typeof file.source === 'string' ? file.source : '')))
                     .filter(Boolean)
                     .join(',');
                 input.value = newValue;
@@ -2071,19 +2036,15 @@
         initFilePond();
     };
 
-    // jQuery hat höchste Priorität, wenn vorhanden
-    if (typeof jQuery !== 'undefined') {
-        // Verwende .on() statt .one(), da rex:ready mehrfach feuern kann (z.B. PJAX)
-        // Die Prüfung in initFilePond verhindert Mehrfach-Initialisierung desselben Elements
-        jQuery(document).on('rex:ready', safeInitFilePond);
+    // Beim Laden der Seite; im Backend zusätzlich bei rex:ready (auch nach PJAX).
+    // Bereits initialisierte Elemente werden übersprungen.
+    if (document.readyState !== 'loading') {
+        safeInitFilePond();
     } else {
-        // Ansonsten einen normalen DOMContentLoaded-Listener verwenden
-        if (document.readyState !== 'loading') {
-            // DOM ist bereits geladen
-            safeInitFilePond();
-        } else {
-            document.addEventListener('DOMContentLoaded', safeInitFilePond);
-        }
+        document.addEventListener('DOMContentLoaded', safeInitFilePond);
+    }
+    if (typeof jQuery !== 'undefined') {
+        jQuery(document).on('rex:ready', safeInitFilePond);
     }
 
     // Event für manuelle Initialisierung

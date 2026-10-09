@@ -1,971 +1,335 @@
-# KLXM FilePond Uploader for REDAXO
+# FilePond Uploader for REDAXO
 
-**A modern file uploader for REDAXO with chunk upload and seamless media pool integration.**
+File uploader for the REDAXO media pool based on [FilePond](https://pqina.nl/filepond/): chunked upload for large files, metadata dialog with meta info fields, built-in image editor, AI alt texts via [AI Platform](https://github.com/FriendsOfREDAXO/ai_platform), YForm field type, frontend use and MediaPlace integration.
 
-![Screenshot](https://github.com/KLXM/filepond_uploader/blob/assets/screenshot.png?raw=true)
+![Screenshot](https://github.com/FriendsOfREDAXO/filepond_uploader/blob/assets/screenshot.png?raw=true)
 
-Alternative: [uppy](https://github.com/FriendsOfREDAXO/uppy)
+German documentation: [README.de.md](README.de.md) · Alternative: [uppy](https://github.com/FriendsOfREDAXO/uppy)
 
-## Key Features
+## Contents
 
-*   **Chunk upload as a core feature:**
-    *   Reliable upload of large files in small parts (chunks)
-    *   Configurable chunk size (default: 5 MB)
-    *   Progress display for individual chunks and the full file
-    *   Automatic merging of chunks after upload
+- [Features](#features)
+- [Requirements and installation](#requirements-and-installation)
+- [Upgrading from 2.x](#upgrading-from-2x)
+- [Settings](#settings)
+- [In the backend](#in-the-backend)
+- [YForm field type](#yform-field-type)
+- [In modules](#in-modules)
+- [In the frontend](#in-the-frontend)
+- [Image editor](#image-editor)
+- [AI alt texts](#ai-alt-texts)
+- [Alt text checker](#alt-text-checker)
+- [Metadata](#metadata)
+- [Data attributes](#data-attributes)
+- [Security](#security)
+- [PHP API and classes](#php-api-and-classes)
+- [JavaScript](#javascript)
+- [Styling](#styling)
+- [Maintenance](#maintenance)
+- [Credits](#credits)
 
-*   **Replace existing media pool files:**
-    *   Dedicated FilePond panel on the media detail page
-    *   Uses the same chunk upload flow for large replacement files
-    *   Keeps the existing REDAXO media filename unchanged
+## Features
 
-*   **Delayed upload mode:**
-    *   Select and arrange files before uploading
-    *   Separates file selection from the upload process
-    *   User-friendly upload button appears automatically
-    *   Remove unwanted files before upload
-    *   Ideal for editors working with many files
+- **Chunked upload:** large files in parts (default 5 MB), with progress and cancel; leftovers of cancelled uploads are removed automatically.
+- **Metadata dialog:** title, alt text, copyright and all other media pool meta info fields, also multilingual (MetaInfo Lang Fields). Required fields and decorative images.
+- **Image editor:** crop with free or fixed aspect ratio, rotate in 90° steps, flip – before uploading.
+- **Image optimization:** resize in the browser or on the server (ImageMagick or GD), EXIF orientation, colour profiles are kept.
+- **AI alt texts** via an image understanding profile of the AI Platform addon, single and multilingual.
+- **Alt text checker** in the media pool: find missing alt texts, edit them inline, generate them with AI.
+- **YForm field type** `filepond`, including automatic deletion of files that are no longer used, and the `filepond2email` action.
+- **Media pool:** own upload page, optionally replacing the media pool upload page, replace files on the detail page, upload provider for MediaPlace.
+- **Frontend:** for YCom users or guests (API token in the session), with signed target category and field limits.
 
-*   **Modern interface:**
-    *   Drag and drop for easy uploads
-    *   Live preview of images during upload
-    *   Responsive design for all screen sizes
+## Requirements and installation
 
-*   **Automatic image optimization:**
-    *   **Client-side resizing** of large images before upload (optional, disabled by default)
-    *   Faster upload through reduced file size
-    *   Lower server load - ideal for shared hosting
-    *   Automatic EXIF orientation correction (important for smartphone photos)
-    *   Configurable compression quality for JPEG/PNG/WebP
-    *   Preserve original dimensions for GIF files
-    *   **Optional:** Additional server-side image processing
-    *   **Important:** If both options are disabled, original files are uploaded (recommended for professional photography)
+- REDAXO 5.17.1 or later, PHP 8.4 or later
+- Addons: `mediapool`, `metainfo`, `yform` (4.0 or later)
+- Optional: `ai_platform` (AI alt texts), `mediaplace`, `ycom`, `metainfo_lang_fields`
 
-*   **Accessibility and legal safety:**
-    *   ALT text requirement for images is configurable (enabled by default)
-    *   Automatically creates meta fields if they do not exist
-    *   Optional prompt for copyright and description metadata
+Install via the REDAXO installer. Installation creates the meta info fields `med_alt` (alternative text) and `med_copyright` if they are missing, and generates an API token.
 
-*   **YForm integration:**
-    *   Dedicated YForm value field with automatic cleanup of unused media
-    *   Multi-upload support with dynamic preview
-    *   Easy configuration through familiar YForm interfaces
+## Upgrading from 2.x
 
-*   **Multilingual support:**
-    *   Available in German (DE) and English (EN)
-    *   Easily extendable for additional languages
+3.0.0 contains changes that can affect your own extensions:
 
-*   **Secure API:**
-    *   Token-based authentication for external access
-    *   Support for YCOM user authentication
-    *   Validation of file types and file sizes
+- **Namespace** `FriendsOfRedaxo\FilePondUploader`. The old class names (`filepond_helper`, `rex_api_filepond_*`, `filepond_alt_text_checker`, `filepond_ai_alt_generator`, `FriendsOfRedaxo\FilePond\FilePondMediaCleanup`, …) keep working as aliases.
+- **AI only via AI Platform.** The built-in connections for Gemini, Cloudflare and Open WebUI are removed, together with their settings. Create a profile of type "image understanding" in AI Platform and select it in the FilePond settings.
+- **Custom widgets need security attributes:** every request needs a CSRF token, frontend uploads additionally need a signed category. Output `Helper::widgetSecurityAttributes()` in custom widgets (see [In the frontend](#in-the-frontend)). Backend pages get the token automatically.
+- **Removed:** Info Center widget, "Bulk Resize", the API functions `load`, `restore`, `cancel-upload` and `save_metadata`, the session switches `filepond_no_meta` and `filepond_title_required` (use `data-filepond-skip-meta` and `data-filepond-title-required` instead).
+- **Settings** are split into tabs. Existing values are kept; the update removes keys that are no longer used.
 
-*   **Info Center integration:**
-    *   Upload widget directly in the REDAXO Info Center dashboard
-    *   Quick access without opening the media pool
-    *   Category selection via rex_media_category_select
-    *   Automatic positioning after the TimeTracker widget
-    *   Respects all FilePond configuration and user permissions
+All changes are listed in the [CHANGELOG](CHANGELOG.md).
 
-*   **Media widget integration:**
-    *   Seamless integration with REX_MEDIA and REX_MEDIALIST widgets
-    *   Direct upload into form fields
-    *   Thumbnail preview for better overview
-    *   Bulk insert for media lists
-    *   Multilingual user interface
+## Settings
 
-*   **Maintenance tools:**
-    *   Easy cleanup of temporary files and chunks
-    *   Logging of all upload operations
-    *   Admin interface for system maintenance
+**FilePond Uploader → Settings** (admins only):
 
-*   **Alt Text Checker for accessibility:**
-    *   Finds all images without alt text in the media pool
-    *   Statistics dashboard with completion percentage
-    *   Accordion preview with larger image view for better descriptions
-    *   Inline editing directly in the table
-    *   Supports multilingual alt texts (metainfo_lang_fields)
-    *   Mark decorative images (negative list for images without mandatory alt text)
-    *   **AI alt text generation** for automatic descriptions at the click of a button
-    *   Supports **Google Gemini** and **Cloudflare Workers AI** providers
-    *   Configurable prompt profiles: **Accessibility (default)**, **Short/neutral**, **SEO-focused**
-    *   Optional AI result cache with configurable TTL to reduce repeated requests
-    *   Multilingual generation in one request with fallback language and optional blocked-language list
-    *   Fast keyboard navigation with the Tab key
-    *   Bulk save of all changes
-    *   Filter by filename and category
-    *   Integrated as a media pool subpage
-    *   Dedicated permission: `filepond_uploader[alt_checker]`
+| Tab | Contents |
+| --- | --- |
+| Upload | number and size, delayed upload, default category, language, required fields, chunked upload, allowed file types |
+| Images | maximum pixel size, quality, EXIF orientation, resize in the browser or on the server, image editor |
+| Metadata | always show or skip the dialog, additional required fields, hidden fields |
+| Media pool | delete unused files from YForm fields, replace the media pool upload, replace files, multiupload subpage, alt text checker, YCom media protection |
+| AI | AI Platform profile, where to offer AI, target field, languages, prompt, result cache |
+| System | API token, debug log, clean up temporary files |
 
-## Installation
+## In the backend
 
-1.  **Install the addon:** Install the addon filepond_uploader via the REDAXO installer.
-2.  **Activate the addon:** Activate the addon in the backend under AddOns.
-3.  **Configure:** Adjust settings under FilePond Uploader > Settings.
-4.  **Done:** The uploader is now ready to use.
+- **FilePond Uploader → Upload:** upload into a selectable category (only categories the user has permissions for).
+- **Media pool:** FilePond can replace the media pool's upload page or appear as an additional "Multiupload" subpage.
+- **Replace file:** on a media file's detail page the file can be exchanged; file name and metadata are kept.
+- **Media widgets:** opened from `REX_MEDIA`/`REX_MEDIALIST`, uploaded files can be taken over directly.
+- **MediaPlace:** choose "FilePond" as upload provider in the MediaPlace settings; upload button, drag & drop and paste then use the FilePond dialog (including chunked upload, image editor, AI suggestion). Permission for non-admins: `filepond_uploader[mediaplace_upload]`.
 
-## Quick Start
+Permissions: `filepond_uploader[upload]` (upload page), `filepond_uploader[alt_checker]`, `filepond_uploader[mediaplace_upload]`, `filepond_uploader[ycom_media_auth]`. Uploads are only allowed into media categories the user has permissions for.
 
-### Replace existing media files
-
-On the media detail page in the REDAXO media pool, FilePond can add an additional panel named `Replace file in media pool`.
-
-- Select exactly one file with a matching extension.
-- Large files also work here because the existing chunk upload flow is reused.
-- The existing media pool filename stays unchanged; only the file content is replaced.
-- After a successful replacement, the detail page reloads automatically.
-
-The feature can be toggled separately in the addon settings via `Replace existing media pool files with FilePond`.
-
-### Info Center Upload Widget
-
-The FilePond addon provides a practical upload widget in the REDAXO backend Info Center. It allows quick uploads directly from the dashboard without switching to the media pool.
-
-#### Info Center Widget Features
-
-**Quick access:**
-- Upload functionality directly in Info Center
-- No switch to media pool required
-- Compact display without leaving the dashboard
-
-**Full FilePond integration:**
-- Uses all configured FilePond settings
-- Drag and drop uploads in Info Center
-- Chunk upload for large files
-- Image optimization and metadata input
-
-**Category selection:**
-- Dropdown for target category
-- Uses standard rex_media_category_select
-- Respects category permissions
-
-**Intelligent positioning:**
-- Automatically appears after the TimeTracker widget
-- Visible only for logged-in users
-- Robust detection of available addons
-
-#### Activation
-
-The Info Center widget is enabled automatically if these conditions are met:
-
-1. **Info Center addon installed:** The REDAXO Info Center addon must be active
-2. **FilePond Uploader active:** This addon must be active
-3. **User logged in:** Widget is only shown for logged-in backend users
-
-> **Note:** The widget is automatically positioned between TimeTracker and other widgets (priority 0.5). No additional configuration is required.
-
-#### Widget Functionality
-
-**Upload form:**
-- Same structure as the media pool upload page
-- Category selection with all available media pool categories
-- Automatic refresh when category changes
-- Respects all FilePond settings (types, size limits, etc.)
-
-**Metadata input:**
-- Full integration of metadata dialogs
-- Supports multilingual fields (MetaInfo Lang Fields)
-- Validation according to configured rules
-- Alt text and copyright prompts as usual
-
-**Usability:**
-- Drag and drop directly in the widget
-- Live preview of uploaded files
-- Progress indicator and chunk upload
-- Seamless integration into REDAXO UI
-
-#### Deactivation
-
-If the widget is not desired, it can be removed by disabling the Info Center addon or by customizing boot.php.
-
-### Media Widget Integration
-
-The FilePond addon provides seamless integration with REDAXO's standard media widgets (REX_MEDIA and REX_MEDIALIST). After upload, files can be inserted directly into form fields.
-
-#### Usage
-
-1. **Open a media widget:** Click the open icon next to a REX_MEDIA or REX_MEDIALIST field
-2. **Upload mode detected:** FilePond detects widget context and shows an info banner
-3. **Upload files:** Use drag and drop or file selection
-4. **Direct insert:** After successful upload, insert buttons are shown
-
-#### Media Widget Integration Features
-
-**For REX_MEDIA (single media):**
-- Upload -> insert -> window closes automatically
-- Image preview with 80x80 thumbnails
-- File type icons for non-image files
-
-**For REX_MEDIALIST (media lists):**
-- Upload -> window stays open for more uploads
-- Per-file insert
-- Add all button for multiple files
-- Duplicate protection prevents duplicate entries
-- Visual feedback with Added status
-
-#### Preview System
-
-The addon shows automatic previews for uploaded content:
-
-**Images (jpg, png, gif, webp, etc.):**
-- 80x80 thumbnail preview
-- Proportional scaling with object-fit
-- Fallback to file type icon if preview fails
-
-**Other file types:**
-- Color-coded icons by type
-- PDF (red), Word (blue), Excel (green), etc.
-- File extension label under icon
-
-#### Multilingual UI
-
-The media widget integration supports full multilingual UI:
-
-**German:**
-- Upload-Auswahl
-- Die ausgewählten Elemente können in die Liste übernommen werden.
-
-**English:**
-- Upload Selection
-- The selected items can be added to the list.
-
-> **Note:** This feature works automatically with all existing REX_MEDIA and REX_MEDIALIST fields and requires no additional setup.
-
-### Usage as YForm Field Type
+## YForm field type
 
 ```php
 $yform->setValueField('filepond', [
-    'name' => 'bilder',
-    'label' => 'Bildergalerie',
+    'name' => 'images',
+    'label' => 'Gallery',
     'category' => 1,
     'allowed_types' => 'image/*,application/pdf',
     'allowed_filesize' => 10,
     'allowed_max_files' => 5,
-    'required' => 0,
-    'notice' => 'Please upload your files here.',
+    'required' => 1,
     'empty_value' => 'Please select at least one file.',
-    'skip_meta' => 0,
-    'chunk_enabled' => 1,
-    'chunk_size' => 5,
     'delayed_upload' => 0,
-    'title_required' => 1,
-    'alt_required' => 1,
-    'max_pixel' => 2100,
-    'image_quality' => 90,
-    'client_resize' => 0,
-    'ai_enabled' => 0,
-    'ai_target_field' => 'med_alt',
 ]);
 ```
 
-Supported YForm value options: name, label, category, allowed_types, allowed_filesize, allowed_max_files, required, notice, empty_value, skip_meta, chunk_enabled, chunk_size, delayed_upload, title_required, alt_required, max_pixel, image_quality, client_resize, ai_enabled, ai_target_field.
+Pipe notation: `filepond|name|label|category|allowed_types|allowed_filesize|allowed_max_files|required|notice|empty_value|skip_meta|chunk_enabled|chunk_size|delayed_upload|title_required|alt_required|max_pixel|image_quality|client_resize|ai_enabled|ai_target_field`
 
-### Option: delayed_upload
+Empty options fall back to the global settings. The file names are stored comma-separated.
 
-The delayed_upload option controls when files are actually uploaded and linked to the form:
+| `delayed_upload` | Behaviour |
+| --- | --- |
+| `0` | upload right after selecting |
+| `1` | upload via a separate button |
+| `2` | upload when the form is submitted, then the form is sent |
 
-| Value | Behavior | Typical use case |
-|------|-----------|------------------|
-| `0`  | Files are uploaded **immediately after selection**. | Default behavior, e.g. image galleries |
-| `1`  | Files are uploaded only when the user clicks the **upload button**. | Collect and upload multiple files together |
-| `2`  | After upload, the **YForm is submitted automatically**. | Quick-upload forms; ensure client-side required checks for other fields |
+Rejected files (type, size) block submitting with a notice at the field until they are removed.
 
----
+**Types and size** are also checked on the server: the field signs its limits, and the upload endpoint rejects files outside them.
 
-> **Note:**
-> The filepond value field is a convenient way to use the uploader in YForm.
-> Alternatively, a regular input field with required data attributes can be used.
-> In that case, automatic cleanup of unused media is not available.
+**Delete unused files:** with "automatic deletion" enabled, files removed from the field are deleted from the media pool when the record is saved – unless they are used elsewhere.
 
-### Usage in Modules
+**Send files by e-mail:** the action attaches the files of a field to the YForm e-mail.
 
-#### Input
+```php
+$yform->setActionField('filepond2email', ['images']);
+// Pipe: action|filepond2email|images
+```
 
-```html
-<input
-    type="hidden"
-    name="REX_INPUT_VALUE[1]"
-    value="REX_VALUE[1]"
+## In modules
+
+Input:
+
+```php
+<?php use FriendsOfRedaxo\FilePondUploader\Helper; ?>
+<input type="hidden" name="REX_INPUT_VALUE[1]" value="REX_VALUE[1]"
     data-widget="filepond"
     data-filepond-cat="1"
-    data-filepond-maxfiles="5"
-    data-filepond-types="image/*"
-    data-filepond-maxsize="10"
-    data-filepond-lang="de_de"
-    data-filepond-chunk-enabled="true"
-    data-filepond-chunk-size="5242880"
-    data-filepond-title-required="true"
-    data-filepond-ai-enabled="true"
-    data-filepond-ai-target-field="med_alt"
+    <?= Helper::configAttributes(['types' => 'image/*', 'maxfiles' => 5]) ?>
 >
 ```
 
-### Usage in YForm (Frontend)
+`Helper::configAttributes()` returns all `data-filepond-*` attributes from the settings; single values can be overridden. In the backend, scripts, styles and the CSRF token are loaded automatically.
 
-Complete frontend form example that also works for guests (without login).
-
-```php
-<?php
-// 1. Start session
-rex_login::startSession();
-
-// 2. Optional token fallback for guests (if no backend/ycom login is available)
-$apiToken = (string) rex_config::get('filepond_uploader', 'api_token', '');
-if ('' !== trim($apiToken)) {
-    rex_set_session('filepond_token', trim($apiToken));
-}
-
-// 3. Include FilePond assets
-if (rex::isFrontend()) {
-    echo filepond_helper::getStyles();
-    echo filepond_helper::getScripts();
-}
-
-// 4. Configure YForm instance
-$yform = new rex_yform();
-$yform->setObjectparams('form_name', 'upload-form');
-$yform->setObjectparams('form_action', rex_getUrl(rex_article::getCurrentId()));
-$yform->setObjectparams('form_ytemplate', 'bootstrap');
-$yform->setObjectparams('form_showformafterupdate', 0);
-$yform->setObjectparams('real_field_names', true);
-
-// 5. Add FilePond field (named options)
-$yform->setValueField('filepond', [
-    'name' => 'attachment',
-    'label' => 'Datei-Upload',
-    'category' => 0,
-    'allowed_types' => 'image/*,application/pdf',
-    'allowed_filesize' => 50,
-    'allowed_max_files' => 5,
-    'required' => 0,
-    'notice' => 'Bitte laden Sie Ihre Dateien hier hoch.',
-    'empty_value' => 'Bitte wählen Sie mindestens eine Datei aus.',
-    'skip_meta' => 0,
-    'chunk_enabled' => 1,
-    'chunk_size' => 5,
-    'delayed_upload' => 0,
-    'title_required' => 1,
-    'alt_required' => 1,
-    'max_pixel' => 2100,
-    'image_quality' => 90,
-    'client_resize' => 0,
-    'ai_enabled' => 0,
-    'ai_target_field' => 'med_alt',
-]);
-
-// 6. Save to DB
-$yform->setActionField('db', ['rex_my_yform_table']);
-
-// 7. Success message
-$yform->setActionField('html', ['<div class="alert alert-success">Vielen Dank! Der Upload war erfolgreich.</div>']);
-
-echo $yform->getForm();
-?>
-```
-
-**Notes:**
-- FilePond initializes automatically after DOM ready. No manual init script is required.
-- If you inject form HTML dynamically (AJAX/PJAX), trigger re-init via `document.dispatchEvent(new Event('filepond:init'));`.
-- The metadata field mapping is handled automatically via backend API; no `data-filepond-metainfo-lang` attribute is required.
-
-**Notes on data-filepond-types:**
-- MIME types are preferred: image/*, video/*, application/pdf
-- File extensions are converted automatically: .pdf, .doc, .docx
-- Both formats can be mixed: image/*, .pdf, .doc
-
-#### Output
+Output:
 
 ```php
 <?php
-$files = explode(',', 'REX_VALUE[1]');
-foreach($files as $file) {
-    if($media = rex_media::get($file)) {
-        echo '<img
-            src="'.$media->getUrl().'"
-            alt="'.$media->getValue('med_alt').'"
-            title="'.$media->getValue('title').'"
-        >';
-
-        if (class_exists('\\FriendsOfRedaxo\\MetaInfoLangFields\\MetainfoLangHelper')) {
-            $titles = \\FriendsOfRedaxo\\MetaInfoLangFields\\MetainfoLangHelper::getFieldValues(
-                $media,
-                'med_title_lang'
-            );
-
-            $currentTitle = $titles[rex_clang::getCurrentId()] ?? '';
-            echo '<p>Title: ' . rex_escape($currentTitle) . '</p>';
-
-            $descriptions = \\FriendsOfRedaxo\\MetaInfoLangFields\\MetainfoLangHelper::getFieldValues(
-                $media,
-                'med_description_lang'
-            );
-            $currentDescription = $descriptions[rex_clang::getCurrentId()] ?? '';
-            echo '<p>Description: ' . rex_escape($currentDescription) . '</p>';
-        }
+foreach (array_filter(explode(',', 'REX_VALUE[1]')) as $filename) {
+    $media = rex_media::get($filename);
+    if (null !== $media) {
+        echo '<img src="' . $media->getUrl() . '" alt="' . rex_escape((string) $media->getValue('med_alt')) . '">';
     }
 }
-?>
 ```
 
-### Add Uploads to Emails
+## In the frontend
 
-To include uploads in emails via YForm forms, an action is available.
-
-Pipe notation:
-
-```php
-action|filepond2email|label_filepond
-```
-
-PHP notation:
-
-```php
-$yform->setActionField('filepond2email',['label_filepond']);
-```
-
-Replace label_filepond with the field name of your filepond field, for example uploads.
-
-## Chunk Upload for Large Files
-
-Chunk upload is the core of the FilePond uploader and enables reliable uploads of large files even on slow internet connections.
-
-### How It Works
-
-1. **File splitting:** Large files are split into small chunks client-side.
-2. **Chunked upload:** Each chunk is uploaded individually with progress display.
-3. **Server merge:** After upload completion, chunks are merged server-side into one file.
-4. **Automatic cleanup:** Temporary files are removed after successful upload.
-
-### Benefits
-
-- **Improved reliability:** On network errors, only failed chunks need retrying.
-- **Large files:** Helps overcome server upload limits.
-- **Better performance:** More efficient use of server resources.
-- **User-friendly:** Clear progress display for chunk and total upload.
-
-### Configuration
-
-In the backend you can configure:
-
-- **Enable/disable chunk upload:** Global setting for all upload fields.
-- **Chunk size:** Size of each chunk in MB (default: 5 MB).
-- **Cleanup temporary files:** Manual cleanup of old temporary files.
-
-## Helper Class
-
-The addon includes a helper class for easy inclusion of CSS and JavaScript files.
+Frontend uploads are allowed for logged-in YCom users or – for guests – when the API token is stored in the session. The token is never written to the HTML.
 
 ```php
 <?php
-echo filepond_helper::getScripts();
-echo filepond_helper::getStyles();
-?>
-```
+use FriendsOfRedaxo\FilePondUploader\Config;
+use FriendsOfRedaxo\FilePondUploader\Helper;
 
-## Configuration
-
-### Data Attributes
-
-The following data attributes can be used for configuration:
-
-| Attribute                     | Description                            | Default |
-| ---------------------------- | -------------------------------------- | ------- |
-| `data-filepond-cat`          | Media pool category ID                 | `0` |
-| `data-filepond-types`        | Allowed file types (MIME or extensions, comma-separated) | `image/*` |
-| `data-filepond-maxfiles`     | Maximum number of files                | `30` |
-| `data-filepond-maxsize`      | Maximum file size in MB                | `10` |
-| `data-filepond-lang`         | Language (`de_de` / `en_gb`)           | `de_de` |
-| `data-filepond-skip-meta`    | Disable metadata input                 | `false` |
-| `data-filepond-chunk-enabled`| Enable chunk upload                    | `true` |
-| `data-filepond-chunk-size`   | Chunk size in MB                       | `5` |
-| `data-filepond-delayed-upload` | Delayed upload mode                  | `false` |
-| `data-filepond-delayed-type` | Upload mode type (1=button, 2=submit) | `1` when delayed-upload is active |
-| `data-filepond-title-required` | Title required                       | `false` |
-| `data-filepond-alt-required` | Alt text required for images          | `true` |
-| `data-filepond-max-pixel`    | Max image size in pixels for client resize | `2100` |
-| `data-filepond-image-quality` | JPEG/WebP compression quality (10-100) | `90` |
-| `data-filepond-client-resize` | Enable client-side image resize (`true`/`false`) | `false` |
-| `data-filepond-ai-enabled` | Enable AI suggestion button in upload metadata dialog | `false` |
-| `data-filepond-ai-target-field` | Metadata field used as AI target (for example `med_alt`) | `med_alt` |
-| `data-filepond-opener-field`  | Opener input field for media widget integration | - |
-
-#### Special Metadata Attributes
-
-**data-filepond-title-required**
-Controls whether the simple title field is required:
-
-```html
-<input data-filepond-title-required="true" data-widget="filepond" ...>
-<input data-filepond-title-required="false" data-widget="filepond" ...>
-```
-
-**data-filepond-alt-required**
-Controls whether `med_alt` is required for image uploads:
-
-```html
-<input data-filepond-alt-required="true" data-widget="filepond" ...>
-<input data-filepond-alt-required="false" data-widget="filepond" ...>
-```
-
-**data-filepond-ai-enabled**
-Enables the AI suggestion button in the upload metadata dialog:
-
-```html
-<input data-filepond-ai-enabled="true" data-widget="filepond" ...>
-<input data-filepond-ai-enabled="false" data-widget="filepond" ...>
-```
-
-**data-filepond-ai-target-field**
-Defines the metadata field that receives the AI suggestion:
-
-```html
-<input data-filepond-ai-target-field="med_alt" data-widget="filepond" ...>
-```
-
-Practical AI example for image uploads:
-
-```html
-<input
-    type="hidden"
-    name="REX_INPUT_VALUE[1]"
-    value="REX_VALUE[1]"
-    data-widget="filepond"
-    data-filepond-types="image/*"
-    data-filepond-title-required="true"
-    data-filepond-alt-required="true"
-    data-filepond-ai-enabled="true"
-    data-filepond-ai-target-field="med_alt"
->
-```
-
-> **Note:** `data-filepond-title-lang-required` and `data-filepond-metainfo-lang` are legacy documentation attributes and are no longer required for current frontend integration.
-
-### Allowed File Types (MIME Types)
-
-#### Basic Syntax
-
-The addon supports both MIME types and file extensions. MIME types are preferred because they are safer and less ambiguous.
-
-Recommended:
-
-```
-data-filepond-types="mime/type"
-```
-
-Alternative:
-
-```
-data-filepond-types=".extension"
-```
-
-Both formats can be mixed.
-
-#### Standard MIME Types
-
-*   **Images:** `image/*` or `image/jpeg, image/png, image/gif, image/webp`
-*   **Videos:** `video/*` or `video/mp4, video/webm, video/quicktime`
-*   **Audio:** `audio/*` or `audio/mpeg, audio/wav, audio/ogg`
-*   **PDFs:** `application/pdf`
-*   **Microsoft Word:** `application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document`
-*   **Microsoft Excel:** `application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-*   **Microsoft PowerPoint:** `application/vnd.ms-powerpoint, application/vnd.openxmlformats-officedocument.presentationml.presentation`
-
-#### Examples
-
-```html
-data-filepond-types="image/*"
-data-filepond-types="image/*, application/pdf"
-data-filepond-types="image/*, .pdf"
-data-filepond-types="image/*, video/*, application/pdf"
-data-filepond-types="image/*, video/*, .pdf"
-data-filepond-types="application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document, text/plain"
-data-filepond-types=".pdf, .doc, .docx, .txt"
-data-filepond-types="application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-powerpoint, application/vnd.openxmlformats-officedocument.presentationml.presentation"
-data-filepond-types="image/*, video/*, application/pdf, .doc, .docx, .txt"
-```
-
-#### Supported File Extensions
-
-Automatically mapped extensions include:
-
-*   **Images:** `.jpg, .jpeg, .png, .gif, .webp, .avif, .svg, .bmp, .tiff, .tif, .ico`
-*   **Videos:** `.mp4, .webm, .ogg, .ogv, .avi, .mov, .wmv, .flv, .mkv`
-*   **Audio:** `.mp3, .wav, .ogg, .oga, .flac, .m4a, .aac`
-*   **Documents:** `.pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .odt, .ods, .odp`
-*   **Text:** `.txt, .csv, .rtf, .html, .htm, .xml, .json`
-*   **Archives:** `.zip, .rar, .7z, .tar, .gz, .bz2`
-
-## Session Configuration for Individual Overrides
-
-> **Note:** If you use YForm/YOrm, call rex_login::startSession() before YForm/YOrm initialization.
-
-Start session in frontend:
-
-```php
 rex_login::startSession();
-```
+rex_set_session('filepond_token', Config::string('api_token')); // only needed for guests
 
-### Pass API Token
+$categoryId = 3;
+$types = 'image/*,application/pdf';
+$maxSizeMb = 10;
 
-```php
-rex_set_session('filepond_token', rex_config::get('filepond_uploader', 'api_token'));
-```
-
-> **Note:** Since 2.10.0 the same check (backend login, API token or YCom login) also applies to the metadata endpoint `rex_api_filepond_auto_metainfo` used by the metadata dialog. Custom frontend integrations calling it directly need a token or login as well.
-
-### Disable Metadata Prompt
-
-```php
-rex_set_session('filepond_no_meta', true);
-```
-
-### Configure Title as Required
-
-```php
-rex_set_session('filepond_title_required', true);
-```
-
-### Module Example
-
-```php
-<?php
-rex_login::startSession();
-rex_set_session('filepond_token', rex_config::get('filepond_uploader', 'api_token'));
-rex_set_session('filepond_no_meta', true);
-rex_set_session('filepond_title_required', true);
-
-if (rex::isFrontend()) {
-    echo filepond_helper::getStyles();
-    echo filepond_helper::getScripts();
-}
+echo Helper::getStyles();
 ?>
-
-<form class="uploadform" method="post" enctype="multipart/form-data">
-    <input
-        type="hidden"
-        name="REX_INPUT_MEDIALIST[1]"
-        value="REX_MEDIALIST[1]"
+<form method="post">
+    <input type="hidden" name="files" value=""
         data-widget="filepond"
-        data-filepond-cat="1"
-        data-filepond-types="image/*,video/*,application/pdf"
-        data-filepond-maxfiles="3"
-        data-filepond-maxsize="10"
-        data-filepond-lang="de_de"
-        data-filepond-skip-meta="<?= rex_session('filepond_no_meta', 'boolean', false) ? 'true' : 'false' ?>"
-        data-filepond-title-required="<?= rex_session('filepond_title_required', 'boolean', false) ? 'true' : 'false' ?>"
-        data-filepond-chunk-enabled="true"
-        data-filepond-chunk-size="5242880"
+        data-filepond-cat="<?= $categoryId ?>"
+        <?= Helper::configAttributes(['types' => $types, 'maxsize' => $maxSizeMb]) ?>
+        <?= Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb) ?>
     >
 </form>
+<?= Helper::getScripts() ?>
 ```
 
-## Frontend Initialization and Tips
+`widgetSecurityAttributes()` outputs the CSRF token and a signature over category, types and size. The values must match `data-filepond-cat`, `types` and `maxsize`; the server only accepts signed values. A complete example is in `demo/frontend_demo.php`.
 
-```js
-// Usually not needed: filepond_widget.js initializes automatically.
-// Only for dynamically injected markup:
-document.dispatchEvent(new Event('filepond:init'));
-```
+In frontend YForm forms the `filepond` field type (template `bootstrap`) sets all attributes itself; add `getStyles()`/`getScripts()` and – for guests – the session token as above. AI suggestions are not available in the frontend.
 
-### jQuery Variant
+Upload requests go to the current page URL, where REDAXO handles `rex-api-call`.
 
-```js
-// Optional in jQuery/PJAX contexts
-jQuery(document).trigger('rex:ready');
-```
+## Image editor
 
-## Customizing FilePond Styles
+For JPEG, PNG and WebP: crop (free, original, 1:1, 4:3, 3:2, 16:9 and portrait formats), rotate by 90°, flip horizontally and vertically, reset. Works with mouse, touch and keyboard (arrow keys move, Shift + arrow keys resize, Enter applies, Escape cancels).
 
-The addon provides customizable styles for different parts of the FilePond interface.
+- In the **metadata dialog** via "Edit image" below the preview – in all upload modes.
+- With **delayed upload** also directly on the file item (via `filepond-plugin-image-edit`); preview and upload apply the crop.
 
-### Customize Upload Button
+Disable it under Settings → Images → Image editor, or per widget with `data-filepond-image-editor="false"`.
 
-```css
-:root {
-    --filepond-upload-btn-color: #4285f4;
-    --filepond-upload-btn-hover-color: #3367d6;
-    --filepond-upload-btn-text-color: #fff;
-    --filepond-upload-btn-border-radius: 4px;
-    --filepond-upload-btn-padding: 10px 16px;
-    --filepond-upload-btn-font-size: 14px;
-    --filepond-upload-btn-font-weight: 500;
-    --filepond-upload-btn-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    --filepond-upload-btn-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-```
+## AI alt texts
 
-Examples for different button styles:
+1. Install [AI Platform](https://github.com/FriendsOfREDAXO/ai_platform) and create a profile of type **image understanding** (for example a local Ollama model or a cloud provider).
+2. **Settings → AI:** enable AI alt texts and select the profile (without a selection, AI Platform's default profile is used).
+3. Choose where AI is offered: metadata dialog, media detail page, alt text checker.
 
-```css
-:root {
-    --filepond-upload-btn-color: #dc3545;
-    --filepond-upload-btn-hover-color: #c82333;
-}
+For multilingual alt fields one click generates all languages. Languages the model handles poorly can be blocked; they receive the text of the fallback language. Results are cached per image and profile; "regenerate" bypasses the cache.
 
-:root {
-    --filepond-upload-btn-color: #28a745;
-    --filepond-upload-btn-hover-color: #218838;
-}
+Custom prompt with placeholders:
 
-:root {
-    --filepond-upload-btn-color: transparent;
-    --filepond-upload-btn-hover-color: rgba(0, 0, 0, 0.05);
-    --filepond-upload-btn-text-color: #007bff;
-    --filepond-upload-btn-shadow: none;
-    --filepond-upload-btn-shadow-hover: none;
-}
+| Placeholder | Replaced with |
+| --- | --- |
+| `{language}` | language name, e.g. "English" |
+| `{lang}` | language code, e.g. `en` |
+| `{filename}` | original file name |
 
-.filepond-upload-btn {
-    border: 2px solid currentColor !important;
-}
-```
+Without a custom prompt the selected prompt profile is used (accessible, neutral, SEO). AI features are only available to backend users.
 
-### Customize Thumbnail Borders
+## Alt text checker
 
-```css
-[data-filepond-item-state='processing-complete'] {
-    border: 3px solid #28a745 !important;
-    box-shadow: 0 0 8px rgba(40, 167, 69, 0.3) !important;
-    border-radius: 0.5em !important;
-}
+**Media pool → Alt text checker** (admins and permission `filepond_uploader[alt_checker]`):
 
-[data-filepond-item-state*='error'],
-[data-filepond-item-state*='invalid'] {
-    border: 3px solid #dc3545 !important;
-    box-shadow: 0 0 8px rgba(220, 53, 69, 0.3) !important;
-    border-radius: 0.5em !important;
-}
-```
+- statistics on images with and without alt text
+- enter alt texts directly in the list, also multilingual; Enter saves, "Save all" saves all changes
+- mark images as decorative (counted as done)
+- filter by file name and category, large preview
+- AI suggestions per image or for all visible images
 
-Disable glow animation:
-
-```css
-[data-filepond-item-state='processing-complete'],
-[data-filepond-item-state*='error'],
-[data-filepond-item-state*='invalid'] {
-    animation: none !important;
-}
-```
-
-### Theme-specific Customization
-
-```css
-.dark-theme .filepond-upload-btn {
-    --filepond-upload-btn-color: #3d4852;
-    --filepond-upload-btn-hover-color: #2d3748;
-    --filepond-upload-btn-text-color: #f7fafc;
-}
-
-.minimal-theme .filepond-upload-btn {
-    --filepond-upload-btn-color: transparent;
-    --filepond-upload-btn-hover-color: rgba(0, 0, 0, 0.05);
-    --filepond-upload-btn-text-color: #2196F3;
-    --filepond-upload-btn-shadow: none;
-    --filepond-upload-btn-shadow-hover: none;
-    border: 1px solid currentColor;
-}
-```
-
-### Include Custom CSS
-
-```html
-<link rel="stylesheet" href="path/to/filepond-custom-styles.css">
-<link rel="stylesheet" href="path/to/my-overrides.css">
-```
-
-```php
-<?php
-echo filepond_helper::getStyles();
-rex_view::addCssFile($this->getAssetsUrl('css/my-filepond-overrides.css'));
-?>
-```
-
-## Image Optimization
-
-Images can be optimized automatically - client-side in the browser, server-side after upload, or both. Both options are independent.
-
-### Client-side Image Processing (default: enabled)
-
-Client-side processing uses FilePond plugins to optimize images directly in the browser.
-
-Benefits:
-- Faster upload due to smaller files
-- Lower server load
-- Ideal for shared hosting
-- Immediate preview of optimized images
-
-### Server-side Image Processing (default: disabled)
-
-Server-side processing optimizes images after upload on the server.
-
-Benefits:
-- Works with older browsers
-- Additional validation layer
-- Consistent processing independent of client
-
-### Combinations
-
-| Client-side | Server-side | Use case |
-|:-----------:|:-----------:|---------|
-| yes | no | Default, ideal for shared hosting |
-| no | yes | Strong server resources, older browsers |
-| yes | yes | Cascading optimization |
-| no | no | Keep original files |
-
-### EXIF Orientation
-
-Client-side EXIF correction runs automatically via FilePond EXIF Orientation plugin when client-side processing is enabled.
-
-## Multilingual Support and MetaInfo Lang Fields
-
-The addon supports multilingual metadata through integration with MetaInfo Lang Fields.
-
-### Requirements
-
-1. MetaInfo addon
-2. MetaInfo Lang Fields addon
-
-### Recommended Fields
-
-Single-language fields:
-- title
-- med_alt
-- med_copyright
-
-Multilingual fields:
-- med_title_lang
-- med_description_lang
-- med_keywords_lang
-
-### Validation
-
-- med_title_lang: always required
-- med_alt: required for images by default, can be disabled in settings, and can be marked decorative
-- title: optional unless configured as required
+Requires the meta info field `med_alt`.
 
 ## Metadata
 
-Each uploaded file can include:
+The dialog shows the media pool's meta info fields, ordered `title`, `med_title_lang`, `med_alt`, `med_copyright`, `med_description`, then all others. Multilingual fields (MetaInfo Lang Fields) get language tabs.
 
-Standard metadata:
-1. title
-2. med_alt
-3. med_copyright
-4. med_description
+- `title`: optionally required (setting or `data-filepond-title-required`)
+- `med_title_lang`: always required
+- `med_alt`: required for images by default, alternatively "decorative image"
 
-Multilingual metadata:
-1. med_title_lang
-2. med_description_lang
-3. med_keywords_lang
+Further required and hidden fields can be set under Settings → Metadata.
 
-Configurable required fields:
-- title: optional by default, configurable as required
-- med_title_lang: always required
-- med_alt: required for images by default (setting: Alt text for images as required field)
+## Data attributes
 
-## Alt Text Checker
+| Attribute | Meaning | Default |
+| --- | --- | --- |
+| `data-widget="filepond"` | turns an `<input type="hidden">` into an upload field | – |
+| `data-filepond-cat` | target category | `0` |
+| `data-filepond-types` | allowed types, MIME or extension, e.g. `image/*,.pdf` | setting |
+| `data-filepond-maxfiles` | maximum number of files | setting |
+| `data-filepond-maxsize` | maximum size in MB | setting |
+| `data-filepond-lang` | `de_de` or `en_gb` | user language |
+| `data-filepond-skip-meta` | skip the metadata dialog | `false` |
+| `data-filepond-title-required` | title is required | setting |
+| `data-filepond-alt-required` | alt text is required for images | setting |
+| `data-filepond-chunk-enabled` | chunked upload | setting |
+| `data-filepond-chunk-size` | chunk size in bytes (values up to 1024 are treated as MB) | 5 MB |
+| `data-filepond-delayed-upload` | delayed upload | `false` |
+| `data-filepond-delayed-type` | `1` button, `2` on submit | `1` |
+| `data-filepond-client-resize` | resize in the browser | setting |
+| `data-filepond-max-pixel` | maximum edge length | setting |
+| `data-filepond-image-quality` | JPEG/WebP quality 10–100 | setting |
+| `data-filepond-image-editor` | image editor | setting |
+| `data-filepond-ai-enabled` | AI suggestion in the dialog (backend only) | setting |
+| `data-filepond-ai-target-field` | target field of the AI suggestion | `med_alt` |
+| `data-filepond-media-url` | URL of the media folder | `/media/` |
 
-The Alt Text Checker helps improve accessibility by listing images without alt text and enabling quick editing.
+The security attributes (`data-filepond-csrf`, `data-filepond-cat-sig`, `data-filepond-policy-*`) are generated by `Helper::widgetSecurityAttributes()`.
 
-### Access
+## Security
 
-Available under Media Pool -> Alt Text Checker for:
-- Admins
-- Users with permission filepond_uploader[alt_checker]
+- Every request needs the addon's CSRF token (backend automatically, frontend via `widgetSecurityAttributes()`).
+- **Backend:** uploads only into categories with permissions; deleting only own uploads or with category permission.
+- **Frontend:** only YCom users or a session with the API token; category, types and size are signed and checked on the server; only the session's own uploads can be deleted.
+- The file type is checked by content (not by extension or browser information), plus the media pool rules for allowed extensions.
+- Chunks and metadata of an upload belong to the session that prepared it.
+- **External clients** without a session authenticate with the `api_token` parameter (Settings → System). Treat the token like a password.
 
-## AI Alt Text Generation
+## PHP API and classes
 
-The addon supports automatic AI alt text generation. Two providers are supported:
+```php
+use FriendsOfRedaxo\FilePondUploader\Helper;
 
-### Area-specific Activation
-
-You can enable or disable AI buttons separately in settings:
-- AI button in upload metadata dialog
-- AI button on media detail page
-
-Path: FilePond Uploader -> Settings -> AI Alt Text Generation
-
-Both area toggles are in addition to the global toggle Enable AI generation.
-
-### Google Gemini (recommended)
-
-Google Gemini provides excellent image analysis with strong multilingual quality.
-
-**Model selection:** after saving the API key, the model list is loaded live from Google (`GET /v1beta/models`) instead of a built-in list that goes stale with every model change. Only models that can describe images are shown (embedding, speech, live and image-generation models are filtered out). The list is cached for 24 hours and refreshed on every "Test connection". Without API key or connection a default list is shown.
-
-> **Tip:** Google still lists some models it no longer grants to new projects (e.g. the 2.5 models). "Test connection" detects this, names Google's recommended replacement and preselects it – just save.
-
-> **Tip:** The `-latest` entries always point to Google's current model. Convenient, but the alt text style may change when Google switches models. Choose a fixed version for consistent results.
-
-### Cloudflare Workers AI
-
-Cloudflare provides an alternative with a generous free quota.
-
-### Usage in Alt Text Checker
-
-After setup, the checker shows:
-- Magic wand button per image
-- AI generate all button for bulk generation
-- Multilingual generation for multilingual fields
-
-Not supported: SVG files
-
-### Usage in Upload Metadata Dialog and Media Detail Page
-
-- The magic button appears in each enabled area at the configured target field.
-- Configure target via Target field for AI suggestion (default: med_alt).
-- Multilingual target fields such as med_alt_en are detected automatically.
-
-### Regenerating
-
-- **Single field:** clicking the magic button again creates a new suggestion and replaces the current text.
-- **Multilingual fields ("AI ALT alle"):** the first click only fills empty languages, existing texts stay. Once all languages are filled, the next click **regenerates all languages**.
-- A deliberate regeneration bypasses the AI result cache, so the cache still saves requests on first fill but never blocks new suggestions.
-
-> **Tip:** To rephrase a single language only, clear its field and click "AI ALT alle" – exactly that gap gets filled.
-
-### Custom Prompt and Placeholders
-
-Under **Settings → AI Alt Text → Custom prompt** you can replace the default prompt. Available placeholders:
-
-| Placeholder | Replaced with |
-|---|---|
-| `{language}` | Language name, e.g. "Englisch" |
-| `{lang}` | Language code, e.g. `en` |
-| `{filename}` | File name, e.g. `town-hall-kleve-winter.jpg` (original name for fresh uploads) |
-
-Example:
-
-```text
-Write a one-sentence alt text in {language}.
-The file name "{filename}" may reveal place, people or occasion – use it as context, but only describe what is visible in the image.
-Reply with the alt text only.
+Helper::getStyles();                 // frontend: <link> tags, backend: via rex_view
+Helper::getScripts();                // frontend: <script> tags, backend: via rex_view
+Helper::configAttributes([...]);     // data-filepond-* from the settings
+Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb);
 ```
 
-> **Tip:** Meaningful file names (`town-hall-kleve-winter.jpg` instead of `IMG_4711.jpg`) noticeably improve alt texts because the AI doesn't have to guess the place or occasion. Keep the "only describe what is visible" instruction, otherwise misleading file names get copied unchecked.
+| Class | Purpose | Alias up to 2.x |
+| --- | --- | --- |
+| `FriendsOfRedaxo\FilePondUploader\Helper` | assets and widget attributes | `filepond_helper` |
+| `…\Config` | read settings | – |
+| `…\MediaCleanup` | usage check, deleting unused files | `FriendsOfRedaxo\FilePond\FilePondMediaCleanup` |
+| `…\AltTextChecker` | alt text statistics | `filepond_alt_text_checker` |
+| `…\Ai\AltTextGenerator` | AI alt texts via AI Platform | `filepond_ai_alt_generator` |
+| `…\Api\Upload` | API `filepond_uploader` | `rex_api_filepond_uploader` |
+| `…\Api\AutoMetainfo`, `…\Api\AiGenerate`, `…\Api\AltChecker`, `…\Api\YcomAuth` | further APIs | `rex_api_filepond_*` |
 
-> **Note:** The custom prompt applies to single-language generation. For several languages at once ("AI ALT alle", Alt Text Checker) the built-in prompt profiles are used.
+The APIs are registered as described in the [REDAXO documentation](https://redaxo.org/doku/5.x/api#namespace-registrierung) (`rex-api-call=filepond_uploader` etc.).
 
-### MediaPlace Integration
+Extension point `MEDIA_IS_IN_USE`: files used in a FilePond YForm field count as in use and cannot be deleted in the media pool.
 
-If the [MediaPlace](https://github.com/FriendsOfREDAXO/mediaplace) addon is installed and its own JSON-based metadata system has an `alt`-type field configured, the magic button attaches to that field instead of the classic `med_alt` field — MediaPlace's own field takes priority. The button reacts to MediaPlace's overlay and native metadata canvas as they load, no page reload needed. Without MediaPlace installed, or without an active own alt field, everything works exactly as before against the classic field.
+## JavaScript
 
-## Delayed Upload Mode
+```js
+// After every successful upload, on the input element
+document.querySelector('#my-field').addEventListener('filepond:uploaded', (event) => {
+    console.log(event.detail.filename);
+});
 
-Delayed upload separates file selection from upload execution. Upload starts only after clicking the upload button.
+// FilePond instance of a field
+const pond = document.querySelector('#my-field').pondInstance;
+pond.on('processfile', (error, file) => { /* … */ });
+```
+
+Widgets are initialized when the page loads, in the backend additionally on `rex:ready`. For widgets added later: `document.dispatchEvent(new Event('filepond:init'))`.
+
+## Styling
+
+Colours use CSS variables in `assets/filepond_widget.css` (`--fp-primary`, `--fp-border`, `--fp-background`, …) and follow the backend's dark mode. Override them in your project CSS:
+
+```css
+:root {
+    --fp-primary: #0b6e4f;
+    --fp-primary-hover: #095c42;
+}
+.filepond-upload-btn { border-radius: 0; }
+```
+
+## Maintenance
+
+Leftovers of cancelled uploads (chunks, metadata) are deleted automatically after six hours. Under **Settings → System** they can be cleaned up immediately; there you can also regenerate the API token and enable a debug log (in addition to REDAXO's debug mode).
 
 ## Credits
 
-*   **KLXM Crossmedia GmbH:** [klxm.de](https://klxm.de) - Advertising agency from the Lower Rhine region
-*   **Developer:** [Thomas Skerbis](https://github.com/skerbis)
-*   **Vendor:** FilePond - [pqina.nl/filepond](https://pqina.nl/filepond/)
-*   **License:** MIT
+- **Friends Of REDAXO** – [github.com/FriendsOfREDAXO](https://github.com/FriendsOfREDAXO)
+- **KLXM Crossmedia GmbH** – [klxm.de](https://klxm.de)
+- **Thomas Skerbis** – [github.com/skerbis](https://github.com/skerbis)
+- FilePond by [PQINA](https://pqina.nl/filepond/), MIT licence
 
-We believe in giving back to the community and actively contribute to the REDAXO ecosystem.
-
-## Support
-
-*   **GitHub Issues:** For bug reports and feature requests
-*   **REDAXO Slack:** For community support and discussions
-*   **[www.redaxo.org](https://www.redaxo.org):** Official REDAXO website
-*   **[Addon homepage](https://github.com/KLXM/filepond_uploader/tree/main):** Current information and updates
+Licence: MIT. Please report bugs and requests as an [issue](https://github.com/FriendsOfREDAXO/filepond_uploader/issues).

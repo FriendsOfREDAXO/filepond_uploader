@@ -1,7 +1,5 @@
 # General
 filepond_uploader_title = FilePond Uploader
-filepond_description = Modern file upload field with media pool integration
-filepond_general_settings = General Settings
 filepond_image_processing = Image Processing
 filepond_metadata_settings = Metadata and Dialog
 filepond_mediapool_settings = Media Pool Integration
@@ -13,9 +11,6 @@ filepond_settings_mediapool_subpage = Show Multiupload as media pool subpage
 filepond_settings_mediapool_subpage_label = Add Multiupload page to media pool
 filepond_settings_mediapool_subpage_notice = Adds an additional «Multiupload» subpage to the media pool (requires permission filepond_uploader[upload])
 filepond_multiupload_title = Multiupload
-filepond_settings_alt_checker = Enable Alt-Text-Checker
-filepond_settings_alt_checker_label = Show Alt-Text-Checker in media pool
-filepond_settings_alt_checker_notice = Shows a subpage in the media pool for checking and editing missing alt texts
 perm_general_filepond_uploader[upload] = Use Filepond upload page
 perm_general_filepond_uploader[alt_checker] = Use Alt-Text-Checker
 
@@ -27,7 +22,6 @@ alt_checker_stat_with_alt = With Alt-Text
 alt_checker_stat_without_alt = Without Alt-Text
 alt_checker_stat_complete = Completeness
 alt_checker_images_without_alt = Images without Alt-Text
-alt_checker_preview = Preview
 alt_checker_filename = Filename
 alt_checker_alt_text = Alt-Text
 alt_checker_category = Category
@@ -35,7 +29,6 @@ alt_checker_actions = Actions
 alt_checker_all_categories = All Categories
 alt_checker_filter_filename = Filter filename...
 alt_checker_search = Search
-alt_checker_loading = Loading images...
 alt_checker_all_complete = All images have alt text. Great for accessibility!
 alt_checker_no_results = No images found matching your search criteria.
 alt_checker_enter_alt = Enter alt text...
@@ -51,12 +44,8 @@ alt_checker_field_missing_text = The field "med_alt" does not exist in the media
 alt_checker_create_field = Create MetaInfo Field
 alt_checker_ai_generate = Generate AI alt-text
 alt_checker_ai_generate_all = Generate AI for all
-alt_checker_ai_generating = Generating...
-alt_checker_ai_not_configured = AI not configured
 alt_checker_ai_hint = AI alt text generation is not active. Configure in Settings (may incur costs).
 alt_checker_ai_error = AI error
-alt_checker_ai_tokens = Tokens
-alt_checker_ai_svg_not_supported = SVG not supported
 
 # Tabs
 filepond_uploader_upload = Upload
@@ -73,8 +62,6 @@ filepond_mediapool_replace_notice = Select exactly one file with a matching file
 filepond_mediapool_replace_current_file = Current file
 
 # Settings page
-filepond_settings_title = Settings
-filepond_settings_saved = Settings have been saved
 filepond_upload_settings = Upload Settings
 filepond_settings_max_files = Maximum number of files
 filepond_settings_maxsize = Maximum file size (MB)
@@ -86,8 +73,6 @@ filepond_settings_enable_chunks_label = Enable chunk upload
 filepond_settings_enable_chunks_notice = Allows uploading large files in parts
 filepond_settings_allowed_types = Allowed file types
 filepond_settings_allowed_types_notice = Example: image/*,video/*,.pdf
-filepond_settings_category_id = Default media category
-filepond_settings_category_notice = ID of the media category where files should be uploaded to
 filepond_settings_fallback_category = Fallback media category
 filepond_settings_fallback_category_notice = This category will be used when no specific category is provided
 filepond_settings_lang = Default language
@@ -134,38 +119,6 @@ filepond_settings_alt_checker = Enable Alt-Text-Checker
 filepond_settings_alt_checker_label = Show Alt-Text-Checker in media pool
 filepond_settings_alt_checker_notice = Shows a subpage in the media pool for checking and editing missing alt texts
 
-# YForm field
-filepond_empty_value_label = Error message if empty
-filepond_empty_value_default = Please select a file
-filepond_delete_confirm = Do you really want to delete this file?
-
-# Error messages
-filepond_error_no_file = No file uploaded
-filepond_error_file_too_large = File is too large
-filepond_error_file_type = File type not allowed
-filepond_error_upload_failed = Upload failed
-filepond_error_delete_failed = Could not delete file
-filepond_error_file_not_found = File not found
-filepond_error_invalid_function = Invalid function
-filepond_error_chunk_missing = Chunk missing
-filepond_error_upload_aborted = Upload was aborted
-
-# Messages
-filepond_upload_success = File successfully uploaded
-filepond_delete_success = File successfully deleted
-filepond_chunk_uploaded = Chunk {current} of {total} uploaded
-
-# Metadata fields  
-pool_file_description = Description
-filepond_metadata_title = Title
-filepond_metadata_alt = Alternative Text (Alt Attribute)
-filepond_metadata_alt_decorative = Decorative Image (no alt text required)
-filepond_metadata_alt_notice = Describes the image content for screen readers and SEO
-filepond_metadata_copyright = Copyright / Image Rights
-filepond_metadata_description = Description
-filepond_metadata_save = Save Metadata
-filepond_metadata_cancel = Cancel
-
 # AI Alt-Text Settings
 filepond_ai_settings = AI Alt-Text Generation
 filepond_settings_mediaplace_status_not_installed = MediaPlace is not installed – the settings below apply exclusively to the classic media pool.
@@ -180,26 +133,14 @@ filepond_settings_enable_ai_mediapool_detail = AI button on media detail page
 filepond_settings_enable_ai_mediapool_detail_notice = Controls the magic button directly when editing a file – applies to the classic media pool AND to MediaPlace (if installed), there is no separate switch for it.
 filepond_settings_status_disabled = Disabled
 filepond_settings_status_enabled = Enabled
-filepond_settings_ai_provider = AI Provider
-filepond_settings_ai_provider_notice = Choose the AI service for alt-text generation.
 filepond_settings_ai_target_field = Target field for AI suggestion
 filepond_settings_ai_target_field_notice = Field name in the upload metadata dialog where the magic button writes the suggestion (default: med_alt). For multilingual ALT fields, the MetaInfo type lang_text_all is recommended. Only applies to this classic field – if MediaPlace has its own ALT text field configured (see status notice above), that field is used automatically instead of the field name entered here.
-filepond_settings_gemini_api_key = Gemini API Key
-filepond_settings_gemini_api_key_notice = Create API key from %s (free)
-filepond_settings_gemini_model = Gemini Model
-filepond_settings_gemini_model_notice = The free quota depends on model and project and is shown in Google AI Studio under "Rate limits". Pro models usually require a paid API key. Not every listed model is available to every project – "Test connection" checks the selected model.
-filepond_settings_gemini_model_live = List loaded live from Google (as of {0}, refreshed on "Test connection").
-filepond_settings_gemini_model_fallback = Default list – once the API key is entered and saved, the selection loads the current models directly from Google.
 filepond_settings_ai_max_image_dimension = Max image dimension for AI (px)
 filepond_settings_ai_max_image_dimension_notice = The image is resized to this maximum edge length before the AI request (default: 1024). Smaller values are faster and cheaper, e.g. 768.
 filepond_settings_ai_fallback_language = Fallback language for AI output
 filepond_settings_ai_fallback_language_notice = If a requested language is not returned by the model, this language is used instead (default: en).
 filepond_settings_ai_blocked_languages = Negative list for direct AI languages
 filepond_settings_ai_blocked_languages_notice = Select from the languages available in this system which should not be generated directly by the selected model. These languages will receive text from the fallback language instead. Useful for local models with weak multilingual quality.
-filepond_settings_cloudflare_token = Cloudflare API Token
-filepond_settings_cloudflare_token_notice = Create API token from %s. Permission: Workers AI Read.
-filepond_settings_cloudflare_account_id = Cloudflare Account ID
-filepond_settings_cloudflare_account_id_notice = Find Account ID under %s in the right sidebar.
 filepond_settings_ai_prompt_profile = Prompt profile
 filepond_settings_ai_prompt_profile_notice = Predefined style for alt texts. Accessibility is the default profile.
 filepond_settings_ai_prompt_profile_accessibility = Accessibility (default)
@@ -212,10 +153,6 @@ filepond_settings_ai_result_cache_ttl_hours = Cache lifetime (hours)
 filepond_settings_ai_result_cache_ttl_hours_notice = How long an AI result stays in cache (default: 168 hours = 7 days).
 filepond_settings_ai_prompt = Custom Prompt (optional)
 filepond_settings_ai_prompt_notice = Custom prompt for the AI. Leave empty for default prompt. Placeholders: {language} for language, {filename} for the file name.
-filepond_settings_test_ai_connection = Test connection
-filepond_settings_test_connection_save_first = Please save first: no configuration exists yet for the selected provider.
-filepond_settings_gemini_usage = View limits and usage
-filepond_settings_cloudflare_usage = Manage API tokens
 
 # Token Settings
 filepond_token_section = API Token Settings
@@ -224,37 +161,9 @@ filepond_copy_token = Copy Token
 filepond_token_help = Use this token for API access from external applications.
 filepond_regenerate_token = Regenerate Token
 filepond_regenerate_token_warning = Warning: Existing API integrations must be updated with the new token!
-filepond_regenerate_token_confirm = Are you sure? All existing API integrations must be updated!
 filepond_token_regenerated = API Token has been regenerated.
 
-# General Settings
-filepond_general_settings = General Settings
-filepond_save = Save
-
-# General Settings
-filepond_general_settings = General Settings
-filepond_save = Save
-
-# Chunk Upload Messages
-filepond_chunk_upload_progress = Chunk Upload: {current} of {total}
-filepond_chunk_upload_retry = Retry
-filepond_chunk_upload_abort = Abort upload
-filepond_chunk_upload_resume = Resume upload
-filepond_upload_button = Upload files
-
-# Multilingual Display
-filepond_no_description = No description
-
-# Media Widget Integration
-filepond_uploaded_files_media = Uploaded Files - Ready for Selection
-filepond_uploaded_files_medialist = Uploaded Files - Ready for Media List
-filepond_select_for_media = Select for Media Field
-filepond_select_for_medialist = Add to Media List
-filepond_uploader_media_widget_mode = Upload Selection
-filepond_uploader_media_widget_info = The selected items can be added to the list.
-
 # Display Settings
-filepond_display_settings = Display Settings
 filepond_settings_items_per_page = Items per page
 filepond_settings_items_per_page_notice = Number of items to display per page in lists (Alt-Text-Checker, etc.) (Default: 30).
 filepond_settings_alt_checker_sort = Alt-Text-Checker sorting
@@ -270,27 +179,12 @@ filepond_maintenance_cleanup_button = Delete temporary files now
 filepond_maintenance_cleanup_notice = Deletes old temporary files and chunks that are no longer needed
 filepond_maintenance_cleanup_running = Deleting temporary files...
 filepond_maintenance_cleanup_error = Error deleting temporary files
-filepond_maintenance_cleanup_success = Temporary files have been successfully deleted
+filepond_maintenance_cleanup_result = Cleaned up: removed {0} chunk folders and {1} temporary files. Leftovers of aborted uploads are also removed automatically after 6 hours.
 
 # General Settings
 filepond_general_settings = General Settings
-filepond_save = Save
-
-# Chunk Upload Messages
-filepond_chunk_upload_progress = Chunk Upload: {current} of {total}
-filepond_chunk_upload_retry = Retry
-filepond_chunk_upload_abort = Abort upload
-filepond_chunk_upload_resume = Resume upload
-filepond_upload_button = Upload files
-
-# Multilingual Display
-filepond_no_description = No description
 
 # Media Widget Integration
-filepond_uploaded_files_media = Uploaded Files - Ready for Selection
-filepond_uploaded_files_medialist = Uploaded Files - Ready for Media List
-filepond_select_for_media = Select for Media Field
-filepond_select_for_medialist = Add to Media List
 filepond_uploader_media_widget_mode = Upload Selection
 filepond_uploader_media_widget_info = The selected items can be added to the list.
 
@@ -309,3 +203,112 @@ filepond_ycom_group_type = Group filter
 filepond_ycom_groups = Groups
 filepond_ycom_groups_note = Multi-select: Ctrl/Cmd + click.
 filepond_ycom_auth_reset = Reset session defaults
+
+# 3.0: settings as subpages, AI via ai_platform
+filepond_settings_tab_upload = Upload
+filepond_settings_tab_images = Images
+filepond_settings_tab_metadata = Metadata
+filepond_settings_tab_mediapool = Media pool & alt texts
+filepond_settings_tab_ai = AI
+filepond_settings_tab_system = System
+filepond_settings_alt_checker_list = Alt text checker list
+filepond_settings_debug = Debugging
+filepond_settings_ai_profile = ai_platform profile
+filepond_settings_ai_profile_notice = Profile of type "image understanding" from the ai_platform addon. Provider, model and credentials are managed there.
+filepond_settings_ai_profile_default = Default profile of ai_platform
+filepond_settings_ai_platform_missing = The AI features require the <strong>ai_platform</strong> addon. It is not installed or not activated.
+filepond_settings_ai_platform_no_profile = ai_platform has no active profile of type "image understanding" yet. <a href="{0}">Create profile</a>
+filepond_ai_not_available = No ai_platform profile for image understanding available.
+filepond_ai_profile_ready = AI ready: profile "{0}" ({1})
+filepond_perm_mediaplace_upload = MediaPlace: replace upload button and drag & drop with the FilePond dialog
+
+filepond_metainfo_alt = Alternative text
+filepond_metainfo_copyright = Copyright
+
+filepond_auto_cleanup = Automatically delete unused media
+filepond_auto_cleanup_notice = When enabled, media files are deleted automatically once they are removed from a YForm FilePond field and are not used anywhere else.
+filepond_auto_cleanup_enabled_label = Enabled
+filepond_auto_cleanup_disabled = Disabled
+filepond_enable_debug_logging = Enable debug logging
+filepond_enable_debug_logging_label = Enable debug logs
+filepond_enable_debug_logging_notice = Writes detailed debug logs. Additionally requires the REDAXO debug mode (System).
+filepond_settings_show_alt_stats = Show statistics
+filepond_settings_show_alt_stats_label = Show accessibility statistics
+filepond_settings_show_alt_stats_notice = Shows an overview of missing alt texts in the alt text checker.
+
+filepond_upload_uploaded_files = Uploaded files
+filepond_upload_select_all = Add all files to the media list
+filepond_upload_select_all_hint = Adds all uploaded files at once
+filepond_upload_select_for_list = Add to media list
+filepond_upload_select = Select
+filepond_upload_success_short = Uploaded successfully
+filepond_upload_added = Added
+filepond_upload_all_added = All added
+filepond_error = Error
+filepond_error_unknown = Unknown error
+filepond_saving = Saving …
+alt_checker_save_failed = {0} entries could not be saved
+alt_checker_ai_skipped = Direct AI generation skipped for {0}. Fallback used: {1}.
+alt_checker_blocked_languages = Direct AI generation is disabled for these languages: {0}. These fields use the fallback text from {1}.
+filepond_types_images = Images
+filepond_types_all_images = All images
+filepond_types_documents = Documents
+filepond_types_archives = Archives
+filepond_types_subtitles = Subtitles
+filepond_types_all_videos = All videos
+filepond_types_all_audio = All audio files
+filepond_types_word_template = Word template
+filepond_types_powerpoint_template = PowerPoint template
+filepond_types_fonts = Fonts
+filepond_types_office_warning = Legacy Office formats (.doc, .xls, .ppt) can contain macros and are a security risk. Allow only modern formats (.docx, .xlsx, .pptx) where possible.
+filepond_ai_btn_generate = Generate alt text with AI
+filepond_ai_btn_generate_all = Generate alt texts with AI (all languages)
+filepond_ai_no_filename = Could not determine the file name.
+filepond_ai_no_language_fields = No language fields found.
+filepond_ai_skipped = Direct generation skipped for: {0} (fallback: {1})
+filepond_ai_err_not_found = File not found
+filepond_ai_err_no_image = Not an image file
+filepond_ai_err_svg = SVG files are not supported for AI analysis
+filepond_err_load_fields = Could not load the meta fields
+filepond_err_no_filename = No file name given
+filepond_err_no_updates = No changes given
+
+# YForm
+filepond_yform_yes = Yes
+filepond_yform_no = No
+filepond_yform_category = Media category (ID)
+filepond_yform_category_notice = Category the files are uploaded to
+filepond_yform_allowed_types = Allowed file types
+filepond_yform_allowed_types_notice = MIME types (e.g. image/*, application/pdf) or file extensions (.pdf, .docx), can be mixed. Also enforced on the server.
+filepond_yform_max_filesize = Maximum file size (MB)
+filepond_yform_max_files = Maximum number of files
+filepond_yform_required = Required
+filepond_yform_empty_value = Error message if empty
+filepond_yform_empty_value_default = Please select a file.
+filepond_yform_skip_meta = Skip metadata dialog
+filepond_yform_chunk_enabled = Chunked upload
+filepond_yform_chunk_size = Chunk size (MB)
+filepond_yform_delayed_upload = Upload timing
+filepond_yform_delayed_upload_0 = Immediately
+filepond_yform_delayed_upload_1 = Via upload button
+filepond_yform_delayed_upload_2 = On form submit
+filepond_yform_delayed_upload_notice = With delayed upload, files are only uploaded via the button or on submit.
+filepond_yform_title_required = Title is required
+filepond_yform_alt_required = Alt text is required
+filepond_yform_max_pixel = Maximum image size (pixels)
+filepond_yform_max_pixel_notice = Used for resizing in the browser
+filepond_yform_image_quality = Image quality (10–100)
+filepond_yform_client_resize = Resize images in the browser
+filepond_yform_ai_enabled = AI suggestions in the metadata dialog
+filepond_yform_ai_target_field = AI target field
+filepond_yform_ai_target_field_notice = Meta info field for AI suggestions, e.g. med_alt
+filepond_yform_description = FilePond upload to the media pool with chunked upload and metadata
+filepond_yform_search_notice = Enter file name
+filepond_yform_not_found = not found
+filepond_yform_file_one = 1 file
+filepond_yform_files_count = {0} files
+
+# Bildeditor
+filepond_settings_image_editor = Image editor
+filepond_settings_image_editor_label = Edit images before upload (crop, rotate, flip)
+filepond_settings_image_editor_notice = Crop with free or fixed aspect ratio, rotate in 90° steps and flip. Available in the metadata dialog and, with delayed upload, directly on the file item. Supports JPEG, PNG and WebP.

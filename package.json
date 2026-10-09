@@ -1,22 +1,21 @@
 {
-    "name": "redaxo-filepond",
-    "version": "2.7.0",
+    "name": "redaxo-filepond-uploader",
+    "version": "3.0.0",
     "description": "FilePond integration for REDAXO",
     "private": true,
     "scripts": {
-      "build": "cp node_modules/filepond/dist/* assets/filepond/ && cp node_modules/filepond-plugin-*/dist/* assets/filepond/plugins/",
-      "test": "echo \"Error: no test specified\" && exit 1"
+        "build": "cp node_modules/filepond/dist/* assets/filepond/ && cp node_modules/filepond-plugin-*/dist/* assets/filepond/plugins/"
     },
     "dependencies": {
-      "filepond": "^4.30.4",
-      "filepond-plugin-file-validate-size": "^2.2.8",
-      "filepond-plugin-file-validate-type": "^1.2.8",
-      "filepond-plugin-image-exif-orientation": "^1.0.11",
-      "filepond-plugin-image-preview": "^4.6.11",
-      "filepond-plugin-image-resize": "^2.0.10",
-      "filepond-plugin-image-transform": "^3.8.7"
+        "filepond": "^4.32.12",
+        "filepond-plugin-file-validate-size": "^2.2.8",
+        "filepond-plugin-file-validate-type": "^1.2.9",
+        "filepond-plugin-image-edit": "^1.6.3",
+        "filepond-plugin-image-exif-orientation": "^1.0.11",
+        "filepond-plugin-image-preview": "^4.6.12",
+        "filepond-plugin-image-resize": "^2.0.10",
+        "filepond-plugin-image-transform": "^3.8.8"
     },
-    "devDependencies": {},
-    "author": "Your Name",
+    "author": "Friends Of REDAXO, KLXM Crossmedia GmbH (klxm.de), Thomas Skerbis",
     "license": "MIT"
-  }
+}

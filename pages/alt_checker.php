@@ -1,4 +1,9 @@
 <?php
+
+use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
+use FriendsOfRedaxo\FilePondUploader\AltTextChecker;
+use FriendsOfRedaxo\FilePondUploader\Config;
+use FriendsOfRedaxo\FilePondUploader\Helper;
 /**
  * Alt-Text-Checker - Bilder ohne Alt-Text finden und bearbeiten
  * 
@@ -25,17 +30,6 @@ if ($itemsPerPage < 1) {
 $filterFilename = rex_request('filter_filename', 'string', '');
 $filterCategory = rex_request('filter_category', 'int', -1);
 
-// Debug: Zeige die aktuellen Parameter
-if (rex::isDebugMode()) {
-    dump([
-        'filterFilename' => $filterFilename,
-        'filterCategory' => $filterCategory,
-        'currentBackendPage' => rex_url::currentBackendPage(),
-        'REQUEST_URI' => $_SERVER['REQUEST_URI'] ?? 'unknown',
-        'GET_params' => $_GET
-    ]);
-}
-
 // Media Category Select für Filter - wie auf der Upload-Seite
 $selMediaFilter = new rex_media_category_select($checkPerm = true);
 $selMediaFilter->setId('filter_category');
@@ -46,25 +40,25 @@ $selMediaFilter->setAttribute('class', 'form-control');
 $selMediaFilter->setAttribute('onchange', 'this.form.submit(); return false;');
 $selMediaFilter->addOption($addon->i18n('alt_checker_all_categories'), '-1');
 $mediaPerm = rex::getUser()->getComplexPerm('media');
-if ($mediaPerm instanceof rex_media_perm && $mediaPerm->hasAll()) {
+if ($mediaPerm->hasAll()) {
     $selMediaFilter->addOption(rex_i18n::msg('pool_kats_no'), '0');
 }
 
 // API Endpoint
+// Unescaped, die URL landet per json_encode im JavaScript
 $apiEndpoint = rex_url::backendController([
     'rex-api-call' => 'filepond_alt_checker',
-    '_csrf_token' => rex_csrf_token::factory('filepond_alt_checker')->getValue()
-]);
+    '_csrf_token' => Helper::csrfToken(),
+], false);
 
 // Prüfen ob med_alt Feld existiert
-$altFieldExists = filepond_alt_text_checker::checkAltFieldExists();
+$altFieldExists = AltTextChecker::checkAltFieldExists();
 
 // AI-Status prüfen
-$aiEnabled = filepond_ai_alt_generator::isEnabled();
-$aiProvider = rex_config::get('filepond_uploader', 'ai_provider', 'gemini');
+$aiEnabled = AltTextGenerator::isEnabled();
 
 // Mehrsprachigkeit prüfen
-$isMultiLang = filepond_alt_text_checker::isMultiLangField();
+$isMultiLang = AltTextChecker::isMultiLangField();
 $languages = [];
 // Sprachen immer laden, auch für einsprachige Seiten (für AI-Generierung)
 foreach (rex_clang::getAll() as $clang) {
@@ -76,47 +70,13 @@ foreach (rex_clang::getAll() as $clang) {
 }
 $currentLangId = rex_clang::getCurrentId();
 
-$fallbackLangRaw = rex_config::get('filepond_uploader', 'ai_fallback_language', 'en');
-$fallbackLangCode = is_string($fallbackLangRaw) ? strtolower(substr(trim($fallbackLangRaw), 0, 2)) : 'en';
-if (1 !== preg_match('/^[a-z]{2}$/', $fallbackLangCode)) {
-    $fallbackLangCode = 'en';
-}
-
-$blockedRaw = rex_config::get('filepond_uploader', 'ai_blocked_languages', '');
-$blockedCodes = [];
-if (is_array($blockedRaw)) {
-    $parts = $blockedRaw;
-} elseif (is_string($blockedRaw)) {
-    if (str_contains($blockedRaw, '|')) {
-        $parts = array_values(array_filter(explode('|', $blockedRaw), static fn (string $v): bool => '' !== $v));
-    } else {
-        $parts = preg_split('/[\s,;]+/', strtolower($blockedRaw));
-    }
-} else {
-    $parts = [];
-}
-
-if (is_array($parts)) {
-    foreach ($parts as $part) {
-        if (!is_string($part)) {
-            continue;
-        }
-
-        $short = strtolower(substr(trim($part), 0, 2));
-        if (1 !== preg_match('/^[a-z]{2}$/', $short)) {
-            continue;
-        }
-
-        if (!in_array($short, $blockedCodes, true) && $short !== $fallbackLangCode) {
-            $blockedCodes[] = $short;
-        }
-    }
-}
+$fallbackLangCode = Config::aiFallbackLanguage();
+$blockedCodes = array_values(array_diff(Config::aiBlockedLanguages(), [$fallbackLangCode]));
 
 $languageCodeToName = [];
 foreach ($languages as $lang) {
-    $langCode = strtolower(substr((string) ($lang['code'] ?? ''), 0, 2));
-    $langName = (string) ($lang['name'] ?? strtoupper($langCode));
+    $langCode = strtolower(substr($lang['code'], 0, 2));
+    $langName = $lang['name'];
     if ('' !== $langCode && !isset($languageCodeToName[$langCode])) {
         $languageCodeToName[$langCode] = $langName;
     }
@@ -139,7 +99,7 @@ if ($filterCategory >= 0) {
 }
 
 // Statistik laden
-$stats = filepond_alt_text_checker::getStatistics();
+$stats = AltTextChecker::getStatistics();
 
 // Bilder laden
 $totalCount = 0;
@@ -147,10 +107,10 @@ $images = [];
 $pager = new rex_pager($itemsPerPage, 'start');
 
 if ($altFieldExists) {
-    $totalCount = filepond_alt_text_checker::countImagesWithoutAlt($filters);
+    $totalCount = AltTextChecker::countImagesWithoutAlt($filters);
     $pager->setRowCount($totalCount);
     $offset = $pager->getCursor();
-    $images = filepond_alt_text_checker::findImagesWithoutAlt($filters, $itemsPerPage, $offset);
+    $images = AltTextChecker::findImagesWithoutAlt($filters, $itemsPerPage, $offset);
 }
 
 // Determine current page context (mediapool or addon)
@@ -261,7 +221,7 @@ $currentPage = rex_be_controller::getCurrentPage();
                 <span id="image-count" class="badge"><?= $totalCount ?></span>
                 
                 <div class="pull-right">
-                    <?php if (filepond_ai_alt_generator::isEnabled() && count($images) > 0): ?>
+                    <?php if (AltTextGenerator::isEnabled() && count($images) > 0): ?>
                     <button type="button" class="btn btn-info btn-xs" id="btn-ai-generate-all">
                         <?= $magicIconHtml ?><?= $addon->i18n('alt_checker_ai_generate_all') ?>
                     </button>
@@ -277,8 +237,7 @@ $currentPage = rex_be_controller::getCurrentPage();
         <?php if ($aiEnabled && [] !== $blockedLabelParts): ?>
         <div class="alert alert-info" style="margin: 12px 12px 0 12px;">
             <i class="fa fa-info-circle"></i>
-            Direkte AI-Generierung ist für folgende Sprachen deaktiviert: <strong><?= rex_escape(implode(', ', $blockedLabelParts)) ?></strong>.
-            Diese Felder nutzen den Fallback-Text aus <strong><?= rex_escape($fallbackName) ?> (<?= strtoupper($fallbackLangCode) ?>)</strong>.
+            <?= $addon->i18n('alt_checker_blocked_languages', implode(', ', $blockedLabelParts), $fallbackName . ' (' . strtoupper($fallbackLangCode) . ')') ?>
         </div>
         <?php endif; ?>
         <div class="panel-body" id="images-container" style="padding: 0;">
@@ -311,7 +270,7 @@ $currentPage = rex_be_controller::getCurrentPage();
                         $imgCategoryId = is_numeric($rawCategoryId) ? (int) $rawCategoryId : 0;
                         $categoryName = 0 === $imgCategoryId 
                             ? rex_i18n::msg('pool_kats_no') 
-                            : (string) ($categories[$imgCategoryId] ?? '-');
+                            : (rex_media_category::get($imgCategoryId)?->getName() ?? '-');
                         
                         $isSvg = 'svg' === strtolower(pathinfo($imgFilename, PATHINFO_EXTENSION));
                         $thumbSrc = $isSvg 
@@ -675,15 +634,23 @@ tr:hover .btn-save-row,
 }
 </style>
 
-<script nonce="' . rex_response::getNonce() . '">
+<script nonce="<?= rex_response::getNonce() ?>">
 $(document).on('rex:ready', function() {
     const AltChecker = {
         apiEndpoint: <?= json_encode($apiEndpoint) ?>,
         isMultiLang: <?= json_encode($isMultiLang) ?>,
         languages: <?= json_encode($languages) ?>,
         currentLangId: <?= json_encode($currentLangId) ?>,
-        aiEnabled: <?= json_encode(filepond_ai_alt_generator::isEnabled()) ?>,
+        aiEnabled: <?= json_encode(AltTextGenerator::isEnabled()) ?>,
         spinnerMarkup: '<span class="fp-spinner" aria-hidden="true"></span>',
+        L: <?= json_encode([
+            'error' => rex_i18n::rawMsg('filepond_error'),
+            'unknown' => rex_i18n::rawMsg('filepond_error_unknown'),
+            'saving' => rex_i18n::rawMsg('filepond_saving'),
+            'saveFailed' => rex_i18n::rawMsg('alt_checker_save_failed'),
+            'aiError' => rex_i18n::rawMsg('alt_checker_ai_error'),
+            'skipped' => rex_i18n::rawMsg('alt_checker_ai_skipped'),
+        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
         modifiedImages: new Set(),
         
         init() {
@@ -729,7 +696,7 @@ $(document).on('rex:ready', function() {
             $(document).on('click', '.preview-toggle', (e) => {
                 const $toggle = $(e.currentTarget);
                 const filename = $toggle.data('filename');
-                const $previewRow = $(`.preview-row[data-filename="${this.escapeHtml(filename)}"]`);
+                const $previewRow = $(`.preview-row[data-filename="${CSS.escape(filename)}"]`);
                 
                 $toggle.toggleClass('open');
                 $previewRow.toggleClass('open');
@@ -740,7 +707,7 @@ $(document).on('rex:ready', function() {
                 e.stopPropagation();
                 const $toggle = $(e.currentTarget);
                 const filename = $toggle.data('filename');
-                const $langRow = $(`.lang-row[data-filename="${this.escapeHtml(filename)}"]`);
+                const $langRow = $(`.lang-row[data-filename="${CSS.escape(filename)}"]`);
                 
                 $toggle.toggleClass('active');
                 $langRow.toggleClass('open');
@@ -767,9 +734,9 @@ $(document).on('rex:ready', function() {
         },
         
         saveOne(filename) {
-            const $row = $(`tr.image-row[data-filename="${this.escapeHtml(filename)}"]`);
-            const $langRow = $(`.lang-row[data-filename="${this.escapeHtml(filename)}"]`);
-            const $previewRow = $(`.preview-row[data-filename="${this.escapeHtml(filename)}"]`);
+            const $row = $(`tr.image-row[data-filename="${CSS.escape(filename)}"]`);
+            const $langRow = $(`.lang-row[data-filename="${CSS.escape(filename)}"]`);
+            const $previewRow = $(`.preview-row[data-filename="${CSS.escape(filename)}"]`);
             
             // Alle Inputs sammeln (aus Hauptzeile und Sprach-Zeile)
             const $allInputs = $row.find('.alt-input').add($langRow.find('.alt-input'));
@@ -830,11 +797,11 @@ $(document).on('rex:ready', function() {
                         });
                     }, 500);
                 } else {
-                    alert('Fehler: ' + (response.error || 'Unbekannt'));
+                    alert(this.L.error + ': ' + (response.error || this.L.unknown));
                 }
             })
             .fail((xhr, status, error) => {
-                alert('Fehler: ' + error);
+                alert(this.L.error + ': ' + error);
             })
             .always(() => {
                 $row.removeClass('saving');
@@ -877,7 +844,7 @@ $(document).on('rex:ready', function() {
                 return;
             }
             
-            $('#btn-save-all').prop('disabled', true).html(this.spinnerMarkup + 'Speichern...');
+            $('#btn-save-all').prop('disabled', true).html(this.spinnerMarkup + this.escapeHtml(this.L.saving));
             
             $.post(this.apiEndpoint, {
                 action: 'bulk_update',
@@ -889,11 +856,11 @@ $(document).on('rex:ready', function() {
                     window.location.reload();
                 }
                 if (response.failed > 0) {
-                    alert(response.failed + ' Fehler beim Speichern');
+                    alert(this.L.saveFailed.replace('{0}', response.failed));
                 }
             })
             .fail((xhr, status, error) => {
-                alert('Fehler: ' + error);
+                alert(this.L.error + ': ' + error);
             })
             .always(() => {
                 $('#btn-save-all').prop('disabled', false).html('<i class="fa fa-save"></i> <?= $addon->i18n('alt_checker_save_all') ?>');
@@ -901,8 +868,8 @@ $(document).on('rex:ready', function() {
         },
         
         ignoreImage(filename) {
-            const $row = $(`tr.image-row[data-filename="${this.escapeHtml(filename)}"]`);
-            const $previewRow = $(`.preview-row[data-filename="${this.escapeHtml(filename)}"]`);
+            const $row = $(`tr.image-row[data-filename="${CSS.escape(filename)}"]`);
+            const $previewRow = $(`.preview-row[data-filename="${CSS.escape(filename)}"]`);
             const $input = $row.find('.alt-input');
             
             $row.addClass('saving');
@@ -929,11 +896,11 @@ $(document).on('rex:ready', function() {
                         });
                     }, 800);
                 } else {
-                    alert('Fehler: ' + (response.error || 'Unbekannt'));
+                    alert(this.L.error + ': ' + (response.error || this.L.unknown));
                 }
             })
             .fail((xhr, status, error) => {
-                alert('Fehler: ' + error);
+                alert(this.L.error + ': ' + error);
             })
             .always(() => {
                 $row.removeClass('saving');
@@ -1054,8 +1021,7 @@ $(document).on('rex:ready', function() {
             const infoHtml = `
                 <div id="alt-checker-ai-skip-info" class="alert alert-info" style="margin: 12px; margin-bottom: 0;">
                     <i class="fa fa-info-circle"></i>
-                    Direkte AI-Generierung ausgelassen für <strong>${this.escapeHtml(skippedLabel)}</strong>.
-                    Verwendeter Fallback: <strong>${this.escapeHtml(fallbackLabel)}</strong>.
+                    ${this.escapeHtml(this.L.skipped.replace('{0}', skippedLabel).replace('{1}', fallbackLabel))}
                 </div>
             `;
 
@@ -1065,8 +1031,8 @@ $(document).on('rex:ready', function() {
         
         // AI: Alt-Text für einzelnes Bild generieren (alle Sprachen bei multilang)
         async aiGenerateSingle(filename) {
-            const $row = $(`tr.image-row[data-filename="${this.escapeHtml(filename)}"]`);
-            const $langRow = $(`.lang-row[data-filename="${this.escapeHtml(filename)}"]`);
+            const $row = $(`tr.image-row[data-filename="${CSS.escape(filename)}"]`);
+            const $langRow = $(`.lang-row[data-filename="${CSS.escape(filename)}"]`);
             const $btn = $row.find('.btn-ai-generate');
             const $allInputs = $row.find('.alt-input').add($langRow.find('.alt-input'));
             const languageCodes = this.getRequestedLanguagesForInputs($allInputs);
@@ -1084,7 +1050,7 @@ $(document).on('rex:ready', function() {
                 const response = await this.requestAiBatch(filename, languageCodes);
 
                 if (!response.success) {
-                    alert('<?= $addon->i18n('alt_checker_ai_error') ?>: ' + (response.error || 'Unbekannt'));
+                    alert(this.L.aiError + ': ' + (response.error || this.L.unknown));
                     return;
                 }
 
@@ -1110,12 +1076,8 @@ $(document).on('rex:ready', function() {
                 if (response.blocked_languages_used && response.fallback_language) {
                     this.showSkippedLanguageInfo(response.blocked_languages_used, response.fallback_language);
                 }
-
-                if (response.tokens) {
-                    this.showTokenInfo(response.tokens);
-                }
             } catch (e) {
-                alert('<?= $addon->i18n('alt_checker_ai_error') ?>: ' + e.message);
+                alert(this.L.aiError + ': ' + e.message);
             } finally {
                 $btn.prop('disabled', false).html(originalHtml);
                 $row.removeClass('saving');
@@ -1143,8 +1105,8 @@ $(document).on('rex:ready', function() {
                 processed++;
                 $btn.html(`${this.spinnerMarkup} ${processed}/${total}`);
                 
-                const $row = $(`tr.image-row[data-filename="${this.escapeHtml(filename)}"]`);
-                const $langRow = $(`.lang-row[data-filename="${this.escapeHtml(filename)}"]`);
+                const $row = $(`tr.image-row[data-filename="${CSS.escape(filename)}"]`);
+                const $langRow = $(`.lang-row[data-filename="${CSS.escape(filename)}"]`);
                 // Alle Inputs: aus der Hauptzeile UND der Sprachzeile
                 const $allInputs = $row.find('.alt-input').add($langRow.find('.alt-input'));
 
@@ -1186,38 +1148,8 @@ $(document).on('rex:ready', function() {
         },
         
         escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         },
-        
-        // Token-Info anzeigen
-        showTokenInfo(tokens) {
-            // Bestehende Token-Anzeige entfernen
-            $('#ai-token-info').remove();
-            
-            // Neue Token-Anzeige erstellen
-            const html = `
-                <div id="ai-token-info" class="alert alert-info alert-dismissible" style="margin-top: 15px;">
-                    <button type="button" class="close" data-dismiss="alert">&times;</button>
-                    <i class="fa fa-info-circle"></i> 
-                    <strong><?= $addon->i18n('alt_checker_ai_tokens') ?>:</strong> 
-                    Prompt: ${tokens.prompt.toLocaleString()} | 
-                    Antwort: ${tokens.response.toLocaleString()} | 
-                    Gesamt: ${tokens.total.toLocaleString()}
-                </div>
-            `;
-            
-            $('#alt-checker-filter-form').after(html);
-            
-            // Nach 10 Sekunden ausblenden
-            setTimeout(() => {
-                $('#ai-token-info').fadeOut(500, function() {
-                    $(this).remove();
-                });
-            }, 10000);
-        }
     };
     
     AltChecker.init();

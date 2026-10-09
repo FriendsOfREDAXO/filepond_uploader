@@ -1,12 +1,24 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader;
+
+use rex_i18n;
+use rex;
+use Exception;
+use rex_addon;
+use rex_clang;
+use rex_config;
+use rex_media;
+use rex_media_cache;
+use rex_sql;
+
 /**
  * Alt-Text-Checker - Findet Bilder ohne Alt-Text für Barrierefreiheit
  * Unterstützt auch mehrsprachige Metafelder (metainfo_lang_fields).
  *
  * @package filepond_uploader
  */
-class filepond_alt_text_checker
+class AltTextChecker
 {
     private static ?bool $altFieldExists = null;
 
@@ -445,7 +457,7 @@ class filepond_alt_text_checker
                     ++$results['success'];
                 } else {
                     ++$results['failed'];
-                    $results['errors'][$update['filename']] = $result['error'] ?? 'Unbekannter Fehler';
+                    $results['errors'][$update['filename']] = $result['error'] ?? rex_i18n::rawMsg('filepond_error_unknown');
                 }
             } else {
                 // Einsprachiges Update
@@ -455,7 +467,7 @@ class filepond_alt_text_checker
                     ++$results['success'];
                 } else {
                     ++$results['failed'];
-                    $results['errors'][$update['filename']] = $result['error'] ?? 'Unbekannter Fehler';
+                    $results['errors'][$update['filename']] = $result['error'] ?? rex_i18n::rawMsg('filepond_error_unknown');
                 }
             }
         }
@@ -498,7 +510,7 @@ class filepond_alt_text_checker
         $sql->setQuery('
             SELECT 
                 m.category_id,
-                COALESCE(c.name, "Keine Kategorie") as category_name,
+                COALESCE(c.name, ?) as category_name,
                 COUNT(*) as missing_count
             FROM ' . rex::getTable('media') . ' m
             LEFT JOIN ' . rex::getTable('media_category') . ' c ON m.category_id = c.id
@@ -506,7 +518,7 @@ class filepond_alt_text_checker
               AND (m.med_alt IS NULL OR m.med_alt = "")
             GROUP BY m.category_id, c.name
             ORDER BY missing_count DESC
-        ');
+        ', [rex_i18n::rawMsg('pool_kats_no')]);
 
         return $sql->getArray();
     }

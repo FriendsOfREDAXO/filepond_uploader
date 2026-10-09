@@ -1,5 +1,51 @@
 # Changelog
 
+## 3.0.0 (2026-10-09)
+
+Das AddOn ist zu [Friends Of REDAXO](https://github.com/FriendsOfREDAXO/filepond_uploader) umgezogen (vorher KLXM/filepond_uploader, alte Links leiten weiter). Autoren: Friends Of REDAXO, KLXM Crossmedia GmbH, Thomas Skerbis.
+
+### ⚠️ Breaking Changes
+- **PHP 8.4** ist Mindestvoraussetzung.
+- **Namespace `FriendsOfRedaxo\FilePondUploader`** für alle Klassen, APIs nach [REDAXO-Doku](https://redaxo.org/doku/5.x/api#namespace-registrierung) registriert. Die bisherigen Klassennamen (`filepond_helper`, `rex_api_filepond_*`, `filepond_alt_text_checker`, `filepond_ai_alt_generator`, `FriendsOfRedaxo\FilePond\FilePondMediaCleanup`, `FriendsOfRedaxo\FilePond\YcomAuthSettings`) bleiben als Aliase nutzbar.
+- **KI nur noch über [AI Platform](https://github.com/FriendsOfREDAXO/ai_platform)**: Die eigenen Anbindungen an Gemini, Cloudflare Workers AI und Open WebUI samt Einstellungen sind entfernt. Benötigt wird ein AI-Platform-Profil vom Typ „Bildverständnis“, auswählbar unter Einstellungen → KI.
+- **Eigene Upload-Widgets brauchen Sicherheitsattribute**: Alle APIs verlangen einen CSRF-Token, Frontend-Uploads zusätzlich eine signierte Kategorie. `Helper::widgetSecurityAttributes()` liefert beides; Backend-Seiten erhalten den Token automatisch, das YForm-Template setzt die Attribute selbst.
+- **Entfernt**: Info-Center-Widget, „Bulk Resize“, die API-Funktionen `load`, `restore`, `cancel-upload` und `save_metadata`, die Session-Schalter `filepond_no_meta` und `filepond_title_required` (stattdessen `data-filepond-skip-meta` / `data-filepond-title-required`).
+
+### 🔒 Sicherheit
+- **Löschen fremder Medien**: Jeder berechtigte Aufrufer – auch Frontend-Gäste mit Token in der Session – konnte beliebige Mediendateien löschen, sofern sie in keinem FilePond-Feld steckten. Gelöscht werden dürfen jetzt nur eigene Uploads der Session, im Backend zusätzlich Dateien in Kategorien mit Rechten.
+- **Pfade aus Client-Daten**: Die `fileId` von Chunk-Uploads ging ungeprüft in Dateipfade ein. Sie wird jetzt gegen das erzeugte Format geprüft und gehört der Session, die den Upload vorbereitet hat.
+- **`load` lieferte beliebige Mediendateien** aus (am YCom-Medienschutz vorbei); die Funktion ist entfernt.
+- **CSRF-Schutz** für Upload, Metadaten, KI und Alt-Text-Checker.
+- **Kategorie und Feldgrenzen**: Backend-Uploads nur in Kategorien mit Rechten; im Frontend sind Kategorie, Dateitypen und Maximalgröße signiert und werden serverseitig durchgesetzt (vorher nur im Browser geprüft).
+- **XSS** im Metadaten-Dialog (vorhandene Werte, Feldbezeichnungen) und im Alt-Text-Checker; Attribute im YForm-Template werden escaped.
+- Dateityp wird immer am Inhalt bestimmt; YForm-Feldwerte und `filepond2email` akzeptieren nur vorhandene Mediendateien.
+- KI-Funktionen nur für Backend-User.
+
+### 🎉 Neue Features
+- **Eigener Bildeditor**: Zuschneiden (frei oder mit festem Seitenverhältnis), Drehen um 90°, Spiegeln – im Metadaten-Dialog und bei verzögertem Upload direkt am Dateieintrag (über `filepond-plugin-image-edit`). Tastatur- und Touch-bedienbar, abschaltbar.
+- **Einstellungen auf Reitern**: Upload, Bilder, Metadaten, Medienpool, KI, System.
+- **`Helper::configAttributes()`** erzeugt alle `data-filepond-*`-Attribute aus den Einstellungen, einzelne Werte überschreibbar.
+- **Abbrechen räumt auf**: Bereits übertragene Chunks werden sofort verworfen; Reste abgebrochener Uploads werden zusätzlich automatisch gelöscht.
+- Ereignis `filepond:uploaded` am Input-Element nach jedem erfolgreichen Upload.
+- MediaPlace-Upload mit KI-Vorschlag, Bildeditor und den Chunk-Einstellungen.
+- Englische Übersetzung vervollständigt, alle sichtbaren Texte übersetzbar.
+
+### 🐛 Bugfixes
+- **Upload beim Absenden (YForm `delayed_upload` 2)**: Abgelehnte Dateien blockierten das Absenden kommentarlos, der Feldwert fehlte teils beim Speichern, und YForm konnte „speichern“ und „übernehmen“ nicht unterscheiden.
+- **Alt-Text-Checker**: Speichern und KI schlugen fehl (CSRF-Token kam durch eine HTML-escapte URL nie an); das Recht `filepond_uploader[alt_checker]` fehlte in der Rollenverwaltung.
+- **Frontend**: Widgets wurden auf Seiten mit jQuery nie initialisiert; APIs antworteten auf Seiten mit gesetztem 404-Status (YRewrite/URL-AddOn) mit 404.
+- **Serverseitige Bildverarbeitung**: ImageMagick entfernte das Farbprofil und – ohne EXIF-Korrektur – auch die Orientierung (Bilder lagen danach gedreht); GD verlor die WebP-Transparenz und komprimierte JPEGs doppelt; ImageMagick wurde bei jedem Upload neu gesucht.
+- Abbruch eines Uploads funktionierte nicht zuverlässig, die Chunk-Größe wurde je nach Quelle als MB oder Byte gelesen.
+- Jeder normale Upload übertrug die Datei zweimal.
+- `install.php` lief nur mit eingeloggtem Admin im Backend (nicht per Konsole/Deployment).
+- YForm: Automatisches Löschen nutzte den Wert vor dem Speichern, Listensuche fand Dateien in Feldern mit mehreren Dateien nicht.
+- Erwartbare Ablehnungen (z. B. falscher Token) landen nicht mehr als Fehler im Systemlog.
+
+### 🔧 Technik
+- FilePond 4.32.12, Plugins aktualisiert, `filepond-plugin-image-edit` 1.6.3 neu.
+- rexstan Level 8 ohne Befunde.
+- Nicht mehr benötigte Dateien, Assets und Sprachschlüssel entfernt.
+
 ## 2.11.0 (2026-10-02)
 
 ### 🎉 Neue Features

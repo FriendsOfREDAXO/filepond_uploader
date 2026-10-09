@@ -1,5 +1,8 @@
 <?php
 
+use FriendsOfRedaxo\FilePondUploader\Config;
+use FriendsOfRedaxo\FilePondUploader\MediaCleanup;
+
 class rex_yform_value_filepond extends rex_yform_value_abstract
 {
     protected static function cleanValue(string $value): string
@@ -9,210 +12,86 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
         }));
     }
 
+    /** @var list<string> Dateien des Datensatzes vor dem Speichern (für den Auto-Cleanup) */
+    private array $storedFiles = [];
+
     /**
-     * Hilfsfunktion, die Original-Dateinamen zu Medienpool-Dateinamen zuordnet.
+     * Ordnet einen Original-Dateinamen der neuesten Medienpool-Datei mit diesem Originalnamen zu.
      */
     protected static function getMediapoolFilename(string $originalFilename): string
     {
         $sql = rex_sql::factory();
-        $result = $sql->getArray('SELECT filename FROM ' . rex::getTable('media') . ' WHERE originalname = ?', [$originalFilename]);
+        $sql->setQuery('SELECT filename FROM ' . rex::getTable('media') . ' WHERE originalname = ? ORDER BY id DESC LIMIT 1', [$originalFilename]);
 
-        if (count($result) > 0) {
-            // Wenn mehrere Dateien mit dem gleichen Originalnamen existieren,
-            // nehmen wir die neueste (höchste ID)
-            $sql->setQuery('SELECT filename FROM ' . rex::getTable('media') . ' WHERE originalname = ? ORDER BY id DESC LIMIT 1', [$originalFilename]);
-            return (string) $sql->getValue('filename');
+        return $sql->getRows() > 0 ? (string) $sql->getValue('filename') : $originalFilename;
+    }
+
+    /**
+     * Nur echte Medienpool-Dateinamen übernehmen: der Wert kommt vom Client und landet in
+     * Mail-Anhängen und Pfaden.
+     */
+    protected static function sanitizeValue(string $value): string
+    {
+        $files = [];
+        foreach (explode(',', self::cleanValue($value)) as $name) {
+            if ('' === $name || basename($name) !== $name) {
+                continue;
+            }
+            if (null === rex_media::get($name)) {
+                $name = self::getMediapoolFilename($name);
+            }
+            if (null !== rex_media::get($name) && !in_array($name, $files, true)) {
+                $files[] = $name;
+            }
         }
 
-        return $originalFilename; // Fallback auf den Originalnamen
+        return implode(',', $files);
     }
 
     public function preValidateAction(): void
     {
-        // Nur wenn Auto-Cleanup aktiviert ist
-        if (0 === (int) rex_config::get('filepond_uploader', 'auto_cleanup_enabled', 0)) {
+        $this->storedFiles = [];
+        if (!$this->params['send'] || (int) ($this->params['main_id'] ?? 0) <= 0) {
             return;
         }
 
-        if (!isset($this->params['send']) || !$this->params['send']) {
+        $sql = rex_sql::factory();
+        $sql->setQuery(
+            'SELECT ' . $sql->escapeIdentifier($this->getName()) . ' FROM ' . $sql->escapeIdentifier((string) $this->params['main_table']) . ' WHERE id = ?',
+            [(int) $this->params['main_id']],
+        );
+        if ($sql->getRows() > 0) {
+            $this->storedFiles = array_values(array_filter(explode(',', self::cleanValue((string) $sql->getValue($this->getName())))));
+        }
+    }
+
+    /**
+     * Auto-Cleanup erst nach dem Speichern: entfernte Dateien löschen, wenn sie nirgends
+     * mehr verwendet werden.
+     */
+    public function postAction(): void
+    {
+        if (!Config::isEnabled('auto_cleanup_enabled') || [] === $this->storedFiles) {
             return;
         }
 
-        // Original Value aus der Datenbank holen
-        $originalValue = '';
-        if (isset($this->params['main_id']) && $this->params['main_id'] > 0) {
-            $sql = rex_sql::factory();
-            $sql->setQuery('SELECT ' . $sql->escapeIdentifier($this->getName()) .
-                          ' FROM ' . $sql->escapeIdentifier($this->params['main_table']) .
-                          ' WHERE id = ' . (int) $this->params['main_id']);
-            if ($sql->getRows() > 0) {
-                $originalValue = self::cleanValue((string) $sql->getValue($this->getName()));
+        $current = array_filter(explode(',', self::cleanValue((string) $this->getValue())));
+        $table = (string) ($this->params['main_table'] ?? '');
+        $id = (int) ($this->params['main_id'] ?? 0);
+
+        foreach (array_diff($this->storedFiles, $current) as $filename) {
+            if (null === rex_media::get($filename) || [] !== MediaCleanup::findUsages($filename, $table, $id, $this->getName())) {
+                continue;
             }
-        }
 
-        // Neuen Wert aus dem Formular holen
-        $newValue = '';
-        /** @var array<int, array<int, string>> $formData */
-        $formData = rex_request::request('FORM', 'array', []);
-        if (count($formData) > 0) {
-            foreach ($formData as $form) {
-                if (isset($form[$this->getId()])) {
-                    $newValue = self::cleanValue($form[$this->getId()]);
-                    break;
-                }
-            }
-        }
-
-        // Gelöschte Dateien ermitteln und verarbeiten
-        $originalFiles = array_filter(explode(',', $originalValue), static function (string $v): bool {
-            return '' !== $v;
-        });
-        $newFiles = array_filter(explode(',', $newValue), static function (string $v): bool {
-            return '' !== $v;
-        });
-        $deletedFiles = array_diff($originalFiles, $newFiles);
-
-        if (count($deletedFiles) > 0) {
-            if (rex::isDebugMode() && (bool) rex_config::get('filepond_uploader', 'enable_debug_logging', false)) {
-                rex_logger::factory()->log('debug', sprintf(
-                    'FilePond Auto-Cleanup: %d Datei(en) gelöscht aus Feld "%s" in Tabelle "%s" (ID: %s)',
-                    count($deletedFiles),
-                    $this->getName(),
-                    $this->params['main_table'] ?? 'unknown',
-                    $this->params['main_id'] ?? 'unknown',
-                ));
-            }
-        }
-
-        foreach ($deletedFiles as $filename) {
+            // deleteMedia() prüft MEDIA_IS_IN_USE ohne Kontext, MediaCleanup liest ihn von hier
+            $GLOBALS['filepond_cleanup_ignore'] = ['table' => $table, 'id' => $id, 'field' => $this->getName()];
             try {
-                $media = rex_media::get($filename);
-                if (null === $media) {
-                    if (rex::isDebugMode() && (bool) rex_config::get('filepond_uploader', 'enable_debug_logging', false)) {
-                        rex_logger::factory()->log('debug', sprintf(
-                            'FilePond Auto-Cleanup: Datei "%s" nicht im Mediapool gefunden',
-                            $filename,
-                        ));
-                    }
-                    continue;
-                }
-
-                if (rex::isDebugMode() && (bool) rex_config::get('filepond_uploader', 'enable_debug_logging', false)) {
-                    rex_logger::factory()->log('debug', sprintf(
-                        'FilePond Auto-Cleanup: Prüfe Datei "%s" auf Verwendung',
-                        $filename,
-                    ));
-                }
-
-                // Prüfen ob die Datei noch von anderen Datensätzen verwendet wird
-                $inUse = false;
-                $sql = rex_sql::factory();
-
-                // Alle YForm Tabellen durchsuchen
-                $yformTables = rex_yform_manager_table::getAll();
-                foreach ($yformTables as $table) {
-                    foreach ($table->getFields() as $field) {
-                        if ('value' === $field->getType() && 'filepond' === $field->getTypeName()) {
-                            $tableName = $table->getTableName();
-                            $fieldName = $field->getName();
-                            $filePattern = '%' . str_replace(['%', '_'], ['\%', '\_'], $filename) . '%';
-                            $currentId = (int) $this->params['main_id'];
-
-                            $query = "SELECT id FROM $tableName WHERE $fieldName LIKE :filename AND id != :id";
-
-                            try {
-                                $result = $sql->getArray($query, [':filename' => $filePattern, ':id' => $currentId]);
-                                if (count($result) > 0) {
-                                    $inUse = true;
-                                    if (rex::isDebugMode() && (bool) rex_config::get('filepond_uploader', 'enable_debug_logging', false)) {
-                                        rex_logger::factory()->log('debug', sprintf(
-                                            'FilePond Auto-Cleanup: Datei "%s" noch in Verwendung in Tabelle "%s"',
-                                            $filename,
-                                            $tableName,
-                                        ));
-                                    }
-                                    break 2;
-                                }
-                            } catch (Exception $e) {
-                                rex_logger::factory()->log('warning', sprintf(
-                                    'FilePond Auto-Cleanup: Query-Fehler bei Tabelle "%s": %s',
-                                    $tableName,
-                                    $e->getMessage(),
-                                ));
-                                continue;
-                            }
-                        }
-                    }
-                }
-
-                // Extension Point: MEDIA_IS_IN_USE prüfen
-                if (!$inUse) {
-                    /** @var mixed $warnings */
-                    $warnings = rex_extension::registerPoint(new rex_extension_point(
-                        'MEDIA_IS_IN_USE',
-                        [],
-                        [
-                            'filename' => $filename,
-                            'media' => $media,
-                            'ignore_table' => $this->params['main_table'] ?? '',
-                            'ignore_id' => (int) ($this->params['main_id'] ?? 0),
-                            'ignore_field' => $this->getName(),
-                        ],
-                    ));
-
-                    if (is_array($warnings) && count($warnings) > 0) {
-                        $inUse = true;
-                        rex_logger::factory()->log('debug', sprintf(
-                            'FilePond Auto-Cleanup: Datei "%s" noch in Verwendung (Extension Point)',
-                            $filename,
-                        ));
-                    }
-                }
-
-                // Datei löschen wenn sie nicht mehr verwendet wird
-                if (!$inUse && null !== rex_media::get($filename)) {
-                    rex_logger::factory()->log('debug', sprintf(
-                        'FilePond Auto-Cleanup: Lösche Datei "%s"',
-                        $filename,
-                    ));
-
-                    // Workaround: rex_media_service::deleteMedia() ruft intern mediaIsInUse() auf
-                    // ohne ignore-Parameter. Daher setzen wir die Info in $GLOBALS
-                    $GLOBALS['filepond_cleanup_ignore'] = [
-                        'table' => $this->params['main_table'] ?? '',
-                        'id' => (int) ($this->params['main_id'] ?? 0),
-                        'field' => $this->getName(),
-                    ];
-
-                    try {
-                        rex_media_service::deleteMedia($filename);
-
-                        rex_logger::factory()->log('info', sprintf(
-                            'FilePond Auto-Cleanup: Datei "%s" aus Tabelle "%s" (ID: %s) gelöscht.',
-                            $filename,
-                            $this->params['main_table'] ?? 'unknown',
-                            $this->params['main_id'] ?? 'unknown',
-                        ));
-                    } finally {
-                        // Cleanup
-                        unset($GLOBALS['filepond_cleanup_ignore']);
-                    }
-                } else {
-                    if (rex::isDebugMode() && (bool) rex_config::get('filepond_uploader', 'enable_debug_logging', false)) {
-                        rex_logger::factory()->log('debug', sprintf(
-                            'FilePond Auto-Cleanup: Datei "%s" NICHT gelöscht (inUse: %s)',
-                            $filename,
-                            $inUse ? 'true' : 'false'
-                        ));
-                    }
-                }
-            } catch (Exception $e) {
-                // Fehler beim Löschen werden geloggt aber ignoriert
-                rex_logger::factory()->log('warning', sprintf(
-                    'FilePond Auto-Cleanup: Fehler beim Löschen von "%s": %s',
-                    $filename,
-                    $e->getMessage(),
-                ));
+                rex_media_service::deleteMedia($filename);
+            } catch (Throwable $e) {
+                rex_logger::logException($e);
+            } finally {
+                unset($GLOBALS['filepond_cleanup_ignore']);
             }
         }
     }
@@ -244,7 +123,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
             $errors = [];
             if (1 === (int) $this->getElement('required') && '' === $value) {
                 $emptyValue = $this->getElement('empty_value');
-                $errors[] = (null !== $emptyValue && '' !== $emptyValue) ? (string) $emptyValue : 'Bitte wählen Sie eine Datei aus.';
+                $errors[] = (null !== $emptyValue && '' !== $emptyValue) ? (string) $emptyValue : rex_i18n::msg('filepond_yform_empty_value_default');
             }
 
             if (count($errors) > 0) {
@@ -252,31 +131,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
                 $this->params['warning_messages'][$this->getId()] = implode(', ', $errors);
             }
 
-            // Hier konvertieren wir Original-Dateinamen in Medienpool-Dateinamen
-            if ('' !== $value) {
-                $fileNames = array_filter(explode(',', self::cleanValue($value)), static function (string $v): bool {
-                    return '' !== $v;
-                });
-                $convertedFileNames = [];
-
-                foreach ($fileNames as $fileName) {
-                    // Prüfen ob es sich um einen Original-Dateinamen handelt,
-                    // der im Medienpool anders heißt
-                    if (!is_file(rex_path::media($fileName))) {
-                        $mediaFileName = self::getMediapoolFilename($fileName);
-                        if ($mediaFileName !== $fileName) {
-                            $convertedFileNames[] = $mediaFileName;
-                            continue;
-                        }
-                    }
-                    $convertedFileNames[] = $fileName;
-                }
-
-                // Wenn Dateinamen konvertiert wurden, setzen wir den neuen Wert
-                if (count($convertedFileNames) > 0) {
-                    $value = implode(',', $convertedFileNames);
-                }
-            }
+            $value = self::sanitizeValue($value);
 
             $this->setValue($value);
 
@@ -302,121 +157,41 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
             }
         }
 
-        // Globale Einstellung für Meta-Dialog prüfen
-        $alwaysShowMeta = (bool) rex_config::get('filepond_uploader', 'always_show_meta', false);
-        $skipMeta = false;
+        // Feldeinstellung vor globaler Einstellung
+        $flag = function (string $element, bool $fallback): bool {
+            $raw = (string) $this->getElement($element);
 
-        // Element-Einstellung hat höhere Priorität als globale Einstellung
-        if (null !== $this->getElement('skip_meta') && false === $alwaysShowMeta) {
-            $skipMeta = (bool) $this->getElement('skip_meta');
-        }
+            return '' === $raw ? $fallback : '1' === $raw;
+        };
+        $number = function (string $element, int $fallback): int {
+            $raw = (string) $this->getElement($element);
 
-        // Session-Wert prüfen (hat höchste Priorität, außer bei always_show_meta)
-        if ((bool) rex_session('filepond_no_meta') && false === $alwaysShowMeta) {
-            $skipMeta = true;
-        }
+            return is_numeric($raw) ? (int) $raw : $fallback;
+        };
 
-        // Chunk-Upload-Einstellungen (Element-Einstellung > Config)
-        $chunkEnabledElement = $this->getElement('chunk_enabled');
-        if (null !== $chunkEnabledElement && '' !== (string) $chunkEnabledElement) {
-            $enableChunks = '1' === (string) $chunkEnabledElement;
-        } else {
-            $enableChunks = (bool) rex_config::get('filepond_uploader', 'enable_chunks', true);
-        }
+        $category = (string) $this->getElement('category');
 
-        $chunkSizeElement = $this->getElement('chunk_size');
-        if (null !== $chunkSizeElement && '' !== (string) $chunkSizeElement && is_numeric((string) $chunkSizeElement)) {
-            $chunkSize = (int) $chunkSizeElement * 1024 * 1024;
-        } else {
-            $chunkSize = (int) rex_config::get('filepond_uploader', 'chunk_size', 5) * 1024 * 1024;
-        }
-
-        // Verzögerter Upload-Modus
-        $delayedUpload = $this->getElement('delayed_upload');
-
-        // Zusätzliche optionale Einstellungen (Element-Einstellung > Config)
-        $altRequiredElement = $this->getElement('alt_required');
-        if (null !== $altRequiredElement && '' !== (string) $altRequiredElement) {
-            $altRequired = '1' === (string) $altRequiredElement;
-        } else {
-            $altRequiredRaw = rex_config::get('filepond_uploader', 'alt_required_default', '1');
-            $altRequired = in_array($altRequiredRaw, [1, '1', true, 'true', '|1|'], true);
-        }
-
-        $maxPixelElement = $this->getElement('max_pixel');
-        if (null !== $maxPixelElement && '' !== (string) $maxPixelElement && is_numeric((string) $maxPixelElement)) {
-            $maxPixel = (int) $maxPixelElement;
-        } else {
-            $clientMaxPixel = rex_config::get('filepond_uploader', 'client_max_pixel', '');
-            $cfgMaxPixel = rex_config::get('filepond_uploader', 'max_pixel', 2100);
-            $maxPixel = (is_scalar($clientMaxPixel) && '' !== (string) $clientMaxPixel)
-                ? (int) $clientMaxPixel
-                : (int) $cfgMaxPixel;
-        }
-
-        $imageQualityElement = $this->getElement('image_quality');
-        if (null !== $imageQualityElement && '' !== (string) $imageQualityElement && is_numeric((string) $imageQualityElement)) {
-            $imageQuality = (int) $imageQualityElement;
-        } else {
-            $clientImageQuality = rex_config::get('filepond_uploader', 'client_image_quality', '');
-            $cfgImageQuality = rex_config::get('filepond_uploader', 'image_quality', 90);
-            $imageQuality = (is_scalar($clientImageQuality) && '' !== (string) $clientImageQuality)
-                ? (int) $clientImageQuality
-                : (int) $cfgImageQuality;
-        }
-
-        $clientResizeElement = $this->getElement('client_resize');
-        if (null !== $clientResizeElement && '' !== (string) $clientResizeElement) {
-            $clientResize = '1' === (string) $clientResizeElement;
-        } else {
-            $createThumbs = rex_config::get('filepond_uploader', 'create_thumbnails', '');
-            $clientResize = '|1|' === (string) $createThumbs;
-        }
-
-        $aiEnabledElement = $this->getElement('ai_enabled');
-        if (null !== $aiEnabledElement && '' !== (string) $aiEnabledElement) {
-            $aiEnabled = '1' === (string) $aiEnabledElement;
-        } else {
-            $enableAiAltRaw = rex_config::get('filepond_uploader', 'enable_ai_alt', '0');
-            $enableAiUploadModalRaw = rex_config::get('filepond_uploader', 'enable_ai_upload_modal', '1');
-            $enableAiAlt = in_array($enableAiAltRaw, [1, '1', true, 'true', '|1|'], true);
-            $enableAiUploadModal = in_array($enableAiUploadModalRaw, [1, '1', true, 'true', '|1|'], true);
-            $aiEnabled = $enableAiAlt && $enableAiUploadModal;
-        }
-
-        $aiTargetFieldElement = $this->getElement('ai_target_field');
-        if (null !== $aiTargetFieldElement && '' !== trim((string) $aiTargetFieldElement)) {
-            $aiTargetField = trim((string) $aiTargetFieldElement);
-        } else {
-            $aiTargetFieldRaw = rex_config::get('filepond_uploader', 'ai_target_field', 'med_alt');
-            $aiTargetField = is_string($aiTargetFieldRaw) && '' !== trim($aiTargetFieldRaw) ? trim($aiTargetFieldRaw) : 'med_alt';
-        }
-
-        $categoryElement = $this->getElement('category');
         $this->params['form_output'][$this->getId()] = $this->parse('value.filepond.tpl.php', [
-            'category_id' => (null !== $categoryElement && '' !== $categoryElement) ? $categoryElement : rex_config::get('filepond_uploader', 'category_id', 0),
+            'category_id' => '' !== $category ? (int) $category : Config::int('category_id', 0),
             'value' => $this->getValue(),
             'files' => $files,
-            'chunk_enabled' => $enableChunks,
-            'chunk_size' => $chunkSize,
-            'skip_meta' => $skipMeta,
-            'delayed_upload' => $delayedUpload,
-            'alt_required' => $altRequired,
-            'max_pixel' => $maxPixel,
-            'image_quality' => $imageQuality,
-            'client_resize' => $clientResize,
-            'ai_enabled' => $aiEnabled,
-            'ai_target_field' => $aiTargetField,
+            'chunk_enabled' => $flag('chunk_enabled', Config::isEnabled('enable_chunks', true)),
+            'chunk_size' => $number('chunk_size', Config::int('chunk_size', 5)) * 1024 * 1024,
+            // "Metadaten-Dialog immer anzeigen" übersteuert skip_meta des Feldes
+            'skip_meta' => !Config::isEnabled('always_show_meta') && $flag('skip_meta', false),
+            'delayed_upload' => $this->getElement('delayed_upload'),
+            'alt_required' => $flag('alt_required', Config::isEnabled('alt_required_default', true)),
+            'max_pixel' => $number('max_pixel', Config::int('client_max_pixel', Config::int('max_pixel', 2100))),
+            'image_quality' => $number('image_quality', Config::int('client_image_quality', Config::int('image_quality', 90))),
+            'client_resize' => $flag('client_resize', Config::isEnabled('create_thumbnails')),
+            'ai_enabled' => $flag('ai_enabled', Config::isEnabled('enable_ai_alt') && Config::isEnabled('enable_ai_upload_modal', true)),
+            'ai_target_field' => '' !== trim((string) $this->getElement('ai_target_field')) ? trim((string) $this->getElement('ai_target_field')) : Config::string('ai_target_field', 'med_alt'),
         ]);
     }
 
     public function getDescription(): string
     {
-        return 'filepond|name|label|category|allowed_types[MIME-Types oder Dateiendungen]|allowed_filesize|allowed_max_files|required|notice|empty_value|skip_meta[0,1]|chunk_enabled[0,1]|chunk_size[MB]|delayed_upload[0,1,2]|title_required[0,1]|alt_required[0,1]|max_pixel|image_quality|client_resize[0,1]|ai_enabled[0,1]|ai_target_field
-        
-        Parameter-Details:
-        - title_required[0,1]: Wenn auf 1 gesetzt, muss der Benutzer für jede hochgeladene Datei einen Titel angeben. Bei 0 ist der Titel optional.
-        - delayed_upload[0,1,2]: 0=Sofortiger Upload, 1=Upload-Button, 2=Upload beim Formular-Submit';
+        return 'filepond|name|label|category|allowed_types|allowed_filesize|allowed_max_files|required|notice|empty_value|skip_meta[0,1]|chunk_enabled[0,1]|chunk_size[MB]|delayed_upload[0,1,2]|title_required[0,1]|alt_required[0,1]|max_pixel|image_quality|client_resize[0,1]|ai_enabled[0,1]|ai_target_field';
     }
 
     /**
@@ -424,111 +199,109 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
      */
     public function getDefinitions(): array
     {
+        $yesNo = ['0' => rex_i18n::msg('filepond_yform_no'), '1' => rex_i18n::msg('filepond_yform_yes')];
+
         return [
             'type' => 'value',
             'name' => 'filepond',
             'values' => [
-                'name' => ['type' => 'name',   'label' => rex_i18n::msg('yform_values_defaults_name')],
-                'label' => ['type' => 'text',   'label' => rex_i18n::msg('yform_values_defaults_label')],
+                'name' => ['type' => 'name', 'label' => rex_i18n::msg('yform_values_defaults_name')],
+                'label' => ['type' => 'text', 'label' => rex_i18n::msg('yform_values_defaults_label')],
                 'category' => [
                     'type' => 'text',
-                    'label' => 'Medienkategorie ID',
-                    'notice' => 'ID der Medienkategorie in die die Dateien geladen werden sollen',
-                    'default' => (string) rex_config::get('filepond_uploader', 'category_id', 0),
+                    'label' => rex_i18n::msg('filepond_yform_category'),
+                    'notice' => rex_i18n::msg('filepond_yform_category_notice'),
+                    'default' => (string) Config::int('category_id', 0),
                 ],
                 'allowed_types' => [
                     'type' => 'text',
-                    'label' => 'Erlaubte Dateitypen',
-                    'notice' => 'MIME-Types (z.B.: image/*,video/*,application/pdf) oder Dateiendungen (.pdf,.doc,.docx) - beide Formate können gemischt werden',
-                    'default' => rex_config::get('filepond_uploader', 'allowed_types', 'image/*'),
+                    'label' => rex_i18n::msg('filepond_yform_allowed_types'),
+                    'notice' => rex_i18n::msg('filepond_yform_allowed_types_notice'),
+                    'default' => Config::string('allowed_types', 'image/*'),
                 ],
                 'allowed_filesize' => [
                     'type' => 'text',
-                    'label' => 'Maximale Dateigröße (MB)',
-                    'notice' => 'Größe in Megabyte',
-                    'default' => (string) rex_config::get('filepond_uploader', 'max_filesize', 10),
+                    'label' => rex_i18n::msg('filepond_yform_max_filesize'),
+                    'default' => (string) Config::int('max_filesize', 10),
                 ],
                 'allowed_max_files' => [
                     'type' => 'text',
-                    'label' => 'Maximale Anzahl Dateien',
-                    'default' => (string) rex_config::get('filepond_uploader', 'max_files', 10),
+                    'label' => rex_i18n::msg('filepond_yform_max_files'),
+                    'default' => (string) Config::int('max_files', 10),
                 ],
-                'required' => ['type' => 'boolean', 'label' => 'Pflichtfeld', 'default' => '0'],
-                'notice' => ['type' => 'text',    'label' => rex_i18n::msg('yform_values_defaults_notice')],
+                'required' => ['type' => 'boolean', 'label' => rex_i18n::msg('filepond_yform_required'), 'default' => '0'],
+                'notice' => ['type' => 'text', 'label' => rex_i18n::msg('yform_values_defaults_notice')],
                 'empty_value' => [
                     'type' => 'text',
-                    'label' => 'Fehlermeldung wenn leer',
-                    'default' => 'Bitte eine Datei auswählen.',
+                    'label' => rex_i18n::msg('filepond_yform_empty_value'),
+                    'default' => rex_i18n::msg('filepond_yform_empty_value_default'),
                 ],
-                'skip_meta' => ['type' => 'checkbox',  'label' => 'Metaabfrage deaktivieren', 'default' => '0', 'options' => '0,1'],
+                'skip_meta' => ['type' => 'checkbox', 'label' => rex_i18n::msg('filepond_yform_skip_meta'), 'default' => '0', 'options' => '0,1'],
                 'chunk_enabled' => [
                     'type' => 'checkbox',
-                    'label' => 'Chunk-Upload aktivieren',
-                    'choices' => ['0' => 'Nein', '1' => 'Ja'],
-                    'default' => (bool) rex_config::get('filepond_uploader', 'enable_chunks', true) ? '1' : '0',
+                    'label' => rex_i18n::msg('filepond_yform_chunk_enabled'),
+                    'choices' => $yesNo,
+                    'default' => Config::isEnabled('enable_chunks', true) ? '1' : '0',
                 ],
                 'chunk_size' => [
                     'type' => 'text',
-                    'label' => 'Chunk-Größe (MB)',
-                    'notice' => 'Größe eines Upload-Chunks in Megabyte',
-                    'default' => (string) rex_config::get('filepond_uploader', 'chunk_size', 5),
+                    'label' => rex_i18n::msg('filepond_yform_chunk_size'),
+                    'default' => (string) Config::int('chunk_size', 5),
                 ],
                 'delayed_upload' => [
                     'type' => 'choice',
-                    'label' => 'Verzögerter Upload-Modus',
-                    'choices' => ['0' => 'Deaktiviert', '1' => 'Upload-Button', '2' => 'Submit-Button'],
-                    'notice' => 'Dateien werden erst nach Klick auf den Upload-Button oder nach Formular Übermittlung hochgeladen',
+                    'label' => rex_i18n::msg('filepond_yform_delayed_upload'),
+                    'choices' => [
+                        '0' => rex_i18n::msg('filepond_yform_delayed_upload_0'),
+                        '1' => rex_i18n::msg('filepond_yform_delayed_upload_1'),
+                        '2' => rex_i18n::msg('filepond_yform_delayed_upload_2'),
+                    ],
+                    'notice' => rex_i18n::msg('filepond_yform_delayed_upload_notice'),
                     'default' => '0',
                 ],
                 'title_required' => [
                     'type' => 'checkbox',
-                    'label' => 'Titel-Feld als Pflichtfeld',
-                    'choices' => ['0' => 'Nein', '1' => 'Ja'],
-                    'notice' => 'Wenn aktiviert, wird das title Feld im Metadaten-Dialog als Pflichtfeld markiert',
+                    'label' => rex_i18n::msg('filepond_yform_title_required'),
+                    'choices' => $yesNo,
                     'default' => '0',
                 ],
                 'alt_required' => [
                     'type' => 'checkbox',
-                    'label' => 'ALT-Feld als Pflichtfeld',
-                    'choices' => ['0' => 'Nein', '1' => 'Ja'],
-                    'notice' => 'Wenn aktiviert, ist das med_alt Feld im Metadaten-Dialog ein Pflichtfeld',
-                    'default' => in_array(rex_config::get('filepond_uploader', 'alt_required_default', '1'), [1, '1', true, 'true', '|1|'], true) ? '1' : '0',
+                    'label' => rex_i18n::msg('filepond_yform_alt_required'),
+                    'choices' => $yesNo,
+                    'default' => Config::isEnabled('alt_required_default', true) ? '1' : '0',
                 ],
                 'max_pixel' => [
                     'type' => 'text',
-                    'label' => 'Maximale Bildgröße (Pixel)',
-                    'notice' => 'Wird für clientseitige Größenanpassung verwendet',
-                    'default' => (string) rex_config::get('filepond_uploader', 'max_pixel', 2100),
+                    'label' => rex_i18n::msg('filepond_yform_max_pixel'),
+                    'notice' => rex_i18n::msg('filepond_yform_max_pixel_notice'),
+                    'default' => (string) Config::int('max_pixel', 2100),
                 ],
                 'image_quality' => [
                     'type' => 'text',
-                    'label' => 'Bildqualität (10-100)',
-                    'notice' => 'Qualität für JPEG/WebP bei clientseitiger Verarbeitung',
-                    'default' => (string) rex_config::get('filepond_uploader', 'image_quality', 90),
+                    'label' => rex_i18n::msg('filepond_yform_image_quality'),
+                    'default' => (string) Config::int('image_quality', 90),
                 ],
                 'client_resize' => [
                     'type' => 'checkbox',
-                    'label' => 'Clientseitige Bildverkleinerung',
-                    'choices' => ['0' => 'Nein', '1' => 'Ja'],
-                    'default' => '|1|' === (string) rex_config::get('filepond_uploader', 'create_thumbnails', '') ? '1' : '0',
+                    'label' => rex_i18n::msg('filepond_yform_client_resize'),
+                    'choices' => $yesNo,
+                    'default' => Config::isEnabled('create_thumbnails') ? '1' : '0',
                 ],
                 'ai_enabled' => [
                     'type' => 'checkbox',
-                    'label' => 'AI-Vorschläge im Upload-Dialog',
-                    'choices' => ['0' => 'Nein', '1' => 'Ja'],
-                    'default' => (
-                        in_array(rex_config::get('filepond_uploader', 'enable_ai_alt', '0'), [1, '1', true, 'true', '|1|'], true)
-                        && in_array(rex_config::get('filepond_uploader', 'enable_ai_upload_modal', '1'), [1, '1', true, 'true', '|1|'], true)
-                    ) ? '1' : '0',
+                    'label' => rex_i18n::msg('filepond_yform_ai_enabled'),
+                    'choices' => $yesNo,
+                    'default' => Config::isEnabled('enable_ai_alt') && Config::isEnabled('enable_ai_upload_modal', true) ? '1' : '0',
                 ],
                 'ai_target_field' => [
                     'type' => 'text',
-                    'label' => 'AI-Zielfeld',
-                    'notice' => 'Feldname, in das AI-Vorschläge geschrieben werden (z.B. med_alt)',
-                    'default' => (string) rex_config::get('filepond_uploader', 'ai_target_field', 'med_alt'),
+                    'label' => rex_i18n::msg('filepond_yform_ai_target_field'),
+                    'notice' => rex_i18n::msg('filepond_yform_ai_target_field_notice'),
+                    'default' => Config::string('ai_target_field', 'med_alt'),
                 ],
             ],
-            'description' => 'Filepond Dateiupload mit Medienpool-Integration und Chunk-Upload',
+            'description' => rex_i18n::msg('filepond_yform_description'),
             'db_type' => ['text'],
             'multi_edit' => false,
         ];
@@ -542,7 +315,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
         $params['searchForm']->setValueField('text', [
             'name' => $params['field']->getName(),
             'label' => $params['field']->getLabel(),
-            'notice' => 'Dateiname eingeben',
+            'notice' => rex_i18n::msg('filepond_yform_search_notice'),
         ]);
     }
 
@@ -568,7 +341,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
             $value = str_replace('*', '%', $value);
             return $sql->escapeIdentifier($field) . ' LIKE ' . $sql->escape($value);
         }
-        return $sql->escapeIdentifier($field) . ' = ' . $sql->escape($value);
+        return 'FIND_IN_SET(' . $sql->escape($value) . ', ' . $sql->escapeIdentifier($field) . ')';
     }
 
     /**
@@ -592,10 +365,8 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
             $media = rex_media::get($filename);
 
             if (null === $media) {
-                return '<span style="color: #999;"><i class="fa fa-ban"></i> ' . rex_escape($filename) . ' (nicht gefunden)</span>';
+                return '<span style="color: #999;"><i class="fa fa-ban"></i> ' . rex_escape($filename) . ' (' . rex_i18n::msg('filepond_yform_not_found') . ')</span>';
             }
-
-            $url = rex_url::backendPage('mediapool/detail', ['file_name' => $filename]);
 
             // Bei Bildern: Thumbnail (SVG direkt, andere über Media Manager)
             if ($media->isImage()) {
@@ -614,9 +385,9 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
                 if (null !== $imageUrl) {
                     $ext = mb_strtoupper($media->getExtension());
                     $title = $media->getTitle();
-                    $displayText = ('' !== $title) ? $title : $ext . ' - 1 Datei';
+                    $displayText = ('' !== $title) ? $title : $ext . ' - ' . rex_i18n::msg('filepond_yform_file_one');
                     return '<span style="display: inline-flex; align-items: center;" title="' . rex_escape($filename) . '">' .
-                           '<img src="' . $imageUrl . '" class="img-thumbnail" style="width: 40px; height: 40px; margin-right: 5px;" />' .
+                           '<img src="' . rex_escape($imageUrl) . '" class="img-thumbnail" style="width: 40px; height: 40px; margin-right: 5px;" />' .
                            '<span>' . rex_escape($displayText) . '</span>' .
                            '</span>';
                 }
@@ -627,7 +398,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
             $icon = self::getFileIcon($extension);
             $extUpper = mb_strtoupper($extension);
             $title = $media->getTitle();
-            $displayText = ('' !== $title) ? $title : $extUpper . ' - 1 Datei';
+            $displayText = ('' !== $title) ? $title : $extUpper . ' - ' . rex_i18n::msg('filepond_yform_file_one');
 
             return '<span style="display: inline-flex; align-items: center;" title="' . rex_escape($filename) . '">' .
                    '<i class="fa ' . $icon . ' text-muted" style="font-size: 30px; width: 40px; text-align: center; margin-right: 5px;"></i>' .
@@ -662,7 +433,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
         }
         $extString = implode(', ', $extList);
 
-        $title = $fileCount . ' Dateien: ' . $extString;
+        $title = rex_i18n::msg('filepond_yform_files_count', $fileCount) . ': ' . $extString;
 
         // Icon basierend auf Datei-Typen wählen
         if ($imageCount > 0) {
@@ -677,7 +448,7 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
 
         return '<span style="display: inline-flex; align-items: center;" title="' . rex_escape($title) . '">' .
                $multiIcon .
-               '<strong>' . $fileCount . '</strong>&nbsp;Dateien' .
+               '<strong>' . rex_escape(rex_i18n::msg('filepond_yform_files_count', $fileCount)) . '</strong>' .
                ' <small class="text-muted">(' . rex_escape($extString) . ')</small>' .
                '</span>';
     }
