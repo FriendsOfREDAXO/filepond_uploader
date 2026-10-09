@@ -42,6 +42,7 @@
                 resumeUpload: 'Upload fortsetzen',
                 uploadButton: 'Dateien hochladen',
                 aiSuggestBtn: 'AI-Vorschlag',
+                editImage: 'Bild bearbeiten',
                 aiSuggestBusy: 'Erzeuge Vorschlag...',
                 aiSuggestError: 'AI-Vorschlag fehlgeschlagen',
                 aiSuggestInvalidResponse: 'ungültige Server-Antwort',
@@ -70,6 +71,7 @@
                 resumeUpload: 'Resume upload',
                 uploadButton: 'Upload files',
                 aiSuggestBtn: 'AI Suggest',
+                editImage: 'Edit image',
                 aiSuggestBusy: 'Generating suggestion...',
                 aiSuggestError: 'AI suggestion failed',
                 aiSuggestInvalidResponse: 'invalid server response',
@@ -89,6 +91,12 @@
             FilePondPluginImageResize,
             FilePondPluginImageTransform
         );
+        if (typeof FilePondPluginImageEdit !== 'undefined') {
+            FilePond.registerPlugin(FilePondPluginImageEdit);
+        }
+
+        // Bearbeitete Dateien aus dem Metadaten-Dialog, werden statt des Originals hochgeladen
+        const editedFiles = new WeakMap();
 
         // Funktion zum Konvertieren von Dateiendungen zu MIME-Types
         const extensionToMimeType = (extension) => {
@@ -269,6 +277,10 @@
 
             const initialValue = input.value.trim();
             const skipMeta = input.dataset.filepondSkipMeta === 'true';
+            const imageEditor = window.FilePondImageEditor && input.dataset.filepondImageEditor !== 'false'
+                ? window.FilePondImageEditor
+                : null;
+            const imageQuality = parseInt(input.dataset.filepondImageQuality || '90', 10) || 90;
 
             input.style.display = 'none';
 
@@ -556,9 +568,31 @@
                     previewContainer.className = 'simple-modal-preview';
                     
                     // Verwende die neue wiederverwendbare Preview-Funktion
-                    createFilePreview(file, previewContainer);
+                    createFilePreview(editedFiles.get(file) || file, previewContainer);
                     
                     previewCol.appendChild(previewContainer);
+
+                    if (imageEditor && imageEditor.isEditable(file)) {
+                        const editButton = document.createElement('button');
+                        editButton.type = 'button';
+                        editButton.className = 'btn btn-default btn-sm simple-modal-edit-image';
+                        editButton.innerHTML = '<i class="fa fa-crop" aria-hidden="true"></i> ';
+                        editButton.appendChild(document.createTextNode(t.editImage));
+                        editButton.addEventListener('click', async () => {
+                            const previous = editedFiles.get(file);
+                            const edited = await imageEditor.edit(file, {
+                                lang,
+                                quality: imageQuality,
+                                filename: originalFileName || file.name,
+                                initial: previous ? previous.fpEditorState : null
+                            });
+                            if (edited) {
+                                editedFiles.set(file, edited);
+                                createFilePreview(edited, previewContainer);
+                            }
+                        });
+                        previewCol.appendChild(editButton);
+                    }
 
                     // Form Container mit MetaInfo-Feldern
                     const formCol = document.createElement('div');
@@ -1577,17 +1611,19 @@
                                 };
                             }
 
+                            // Im Dialog bearbeitetes Bild statt des Originals hochladen
+                            const uploadFile = editedFiles.get(file) || file;
+
                             // Entscheiden, ob normaler Upload oder Chunk-Upload
-                            const useChunks = input.dataset.filepondChunkEnabled !== 'false' && file.size > CHUNK_SIZE;
+                            const useChunks = input.dataset.filepondChunkEnabled !== 'false' && uploadFile.size > CHUNK_SIZE;
 
                             if (useChunks) {
                                 // Großer File - Chunk Upload
-                                await processFileInChunks(fieldName, file, fileMetadata, load, error, progress, abort, transfer, options, originalFileName, processController.signal);
+                                await processFileInChunks(fieldName, uploadFile, fileMetadata, load, error, progress, abort, transfer, options, originalFileName, processController.signal);
                                 return;
                             } else {
                                 // Standard Upload für kleine Dateien
                                 const formData = new FormData();
-                                formData.append(fieldName, file, originalFileName);
                                 formData.append('rex-api-call', 'filepond_uploader');
                                 appendSecurity(formData);
                                 formData.append('func', 'prepare');
@@ -1617,7 +1653,7 @@
 
                                 // Eigentlicher Upload
                                 const uploadFormData = new FormData();
-                                uploadFormData.append(fieldName, file, originalFileName);
+                                uploadFormData.append(fieldName, uploadFile, originalFileName);
                                 uploadFormData.append('rex-api-call', 'filepond_uploader');
                                 appendSecurity(uploadFormData);
                                 uploadFormData.append('func', 'upload');
@@ -1769,13 +1805,18 @@
                 
                 // Clientseitige Bildtransformation
                 // Standardmäßig deaktiviert, muss explizit mit data-filepond-client-resize="true" aktiviert werden
-                allowImageTransform: input.dataset.filepondClientResize === 'true',
+                allowImageTransform: input.dataset.filepondClientResize === 'true' || !!imageEditor,
                 imageTransformOutputQuality: parseInt(input.dataset.filepondImageQuality || '90'),
                 imageTransformOutputQualityMode: 'optional', // Nur komprimieren wenn auch resize nötig
                 imageTransformOutputStripImageHead: false, // EXIF-Daten behalten (Orientation wird separat gehandhabt)
                 
                 // EXIF-Orientierung
-                allowImageExifOrientation: true
+                allowImageExifOrientation: true,
+
+                // Bildeditor am Dateieintrag (vor dem Upload, d. h. bei verzögertem Upload)
+                allowImageEdit: !!imageEditor && input.dataset.filepondDelayedUpload === 'true',
+                imageEditInstantEdit: false,
+                imageEditEditor: imageEditor ? imageEditor.createFilePondEditor({ lang }) : null
             });
             
             // Speichere Referenz auf pond-Instanz im input-Element

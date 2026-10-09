@@ -306,3 +306,8 @@ filepond_yform_search_notice = Enter file name
 filepond_yform_not_found = not found
 filepond_yform_file_one = 1 file
 filepond_yform_files_count = {0} files
+
+# Bildeditor
+filepond_settings_image_editor = Image editor
+filepond_settings_image_editor_label = Edit images before upload (crop, rotate, flip)
+filepond_settings_image_editor_notice = Crop with free or fixed aspect ratio, rotate in 90° steps and flip. Available in the metadata dialog and, with delayed upload, directly on the file item. Supports JPEG, PNG and WebP.

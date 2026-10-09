@@ -57,6 +57,12 @@ $field->setLabel($addon->i18n('filepond_settings_server_image_processing'));
 $field->addOption($addon->i18n('filepond_settings_server_image_processing_label'), 1);
 $field->setNotice($addon->i18n('filepond_settings_server_image_processing_notice'));
 
+// Bildeditor (Zuschneiden, Drehen, Spiegeln vor dem Upload)
+$field = $form->addCheckboxField('enable_image_editor');
+$field->setLabel($addon->i18n('filepond_settings_image_editor'));
+$field->addOption($addon->i18n('filepond_settings_image_editor_label'), 1);
+$field->setNotice($addon->i18n('filepond_settings_image_editor_notice'));
+
 $form->addRawField('</div>');
 $form->addRawField('</div>'); // Ende row
 

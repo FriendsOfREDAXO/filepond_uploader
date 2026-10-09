@@ -38,8 +38,10 @@ class Helper
             $addon->getAssetsUrl('filepond/plugins/filepond-plugin-image-preview.min.js'),
             $addon->getAssetsUrl('filepond/plugins/filepond-plugin-image-resize.min.js'),
             $addon->getAssetsUrl('filepond/plugins/filepond-plugin-image-transform.min.js'),
+            $addon->getAssetsUrl('filepond/plugins/filepond-plugin-image-edit.min.js'),
             $addon->getAssetsUrl('filepond/filepond.min.js'),
             $addon->getAssetsUrl('filepond_modal.js'),
+            $addon->getAssetsUrl('filepond_image_editor.js'),
             $addon->getAssetsUrl('filepond_widget.js'),
         ];
 
@@ -82,6 +84,7 @@ class Helper
         $cssFiles = [
             $addon->getAssetsUrl('filepond/filepond.min.css'),
             $addon->getAssetsUrl('filepond/plugins/filepond-plugin-image-preview.min.css'),
+            $addon->getAssetsUrl('filepond/plugins/filepond-plugin-image-edit.min.css'),
             $addon->getAssetsUrl('filepond_widget.css'),
             $addon->getAssetsUrl('filepond-custom-styles.css'),
             $addon->getAssetsUrl('filepond_metainfo_lang.css'),
@@ -196,6 +199,12 @@ class Helper
             . ' data-filepond-policy-types="' . rex_escape($allowedTypes) . '"'
             . ' data-filepond-policy-maxsize="' . $maxFilesizeMb . '"'
             . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"';
+    }
+
+    /** Schaltet den Bildeditor am Widget gemäß Einstellung ein oder aus. */
+    public static function imageEditorAttribute(): string
+    {
+        return ' data-filepond-image-editor="' . (Config::isEnabled('enable_image_editor', true) ? 'true' : 'false') . '"';
     }
 
     private static function secret(): string

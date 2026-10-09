@@ -124,6 +124,7 @@ if (class_exists(Helper::class)) {
        data-filepond-types="<?= rex_escape((string) $dataTypes) ?>"
        data-filepond-maxsize="<?= rex_escape((string) $dataMaxSize) ?>"
        data-filepond-lang="<?= rex_escape((string) $langCode) ?>"
+      <?= Helper::imageEditorAttribute() ?>
        data-filepond-skip-meta="<?= $skip_meta ? 'true' : 'false' ?>"
        data-filepond-chunk-enabled="<?= $chunk_enabled ? 'true' : 'false' ?>"
        data-filepond-chunk-size="<?= rex_escape((string) $chunk_size) ?>"

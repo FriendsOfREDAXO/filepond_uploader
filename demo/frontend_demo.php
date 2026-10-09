@@ -126,6 +126,7 @@ $scripts = Helper::getScripts();
             data-filepond-types="<?= rex_escape($allowedTypes) ?>"
             data-filepond-maxsize="<?= rex_escape($maxFilesize) ?>"
             data-filepond-lang="<?= rex_escape($langCode) ?>"
+            <?= Helper::imageEditorAttribute() ?>
             data-filepond-skip-meta="false"
             data-filepond-chunk-enabled="false"
             data-filepond-chunk-size="1048576"

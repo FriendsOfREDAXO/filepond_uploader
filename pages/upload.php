@@ -1,6 +1,8 @@
 <?php
 
+use FriendsOfRedaxo\FilePondUploader\Helper;
 use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
+
 // Ausgewählte Kategorie hat Vorrang vor der Einstellung aus der Config
 $selectedCategory = rex_request('category_id', 'int', 0);
 
@@ -208,6 +210,7 @@ $content = '
                             data-filepond-types="'.$dataAllowedTypes.'"
                             data-filepond-maxsize="'.$dataMaxFilesize.'"
                             data-filepond-lang="'.$langCode.'"
+                            '.Helper::imageEditorAttribute().'
                             data-filepond-skip-meta="'.($skipMeta ? 'true' : 'false').'"
                             data-filepond-delayed-upload="'.($delayedUpload ? 'true' : 'false').'"
                             data-filepond-title-required="'.($titleRequired ? 'true' : 'false').'"

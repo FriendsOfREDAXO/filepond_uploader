@@ -120,6 +120,7 @@ if (rex::isBackend() && rex::getUser()) {
             . ' data-filepond-types="' . rex_escape(Config::string('allowed_types', 'image/*,video/*,application/pdf')) . '"'
             . ' data-filepond-maxsize="' . Config::int('max_filesize', 200) . '"'
             . ' data-filepond-lang="' . rex_escape($langCode) . '"'
+            . Helper::imageEditorAttribute()
             . ' data-filepond-skip-meta="false"'
             . ' data-filepond-delayed-upload="false"'
             . ' data-filepond-chunk-enabled="' . (Config::isEnabled('enable_chunks', true) ? 'true' : 'false') . '"'

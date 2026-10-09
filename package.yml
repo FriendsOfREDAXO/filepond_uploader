@@ -45,6 +45,7 @@ default_config:
     chunk_size: 5
     create_thumbnails: true
     server_image_processing: false
+    enable_image_editor: true
     always_show_meta: false
     replace_mediapool: false
     enable_mediapool_replace: true

@@ -308,3 +308,8 @@ filepond_yform_search_notice = Dateiname eingeben
 filepond_yform_not_found = nicht gefunden
 filepond_yform_file_one = 1 Datei
 filepond_yform_files_count = {0} Dateien
+
+# Bildeditor
+filepond_settings_image_editor = Bildeditor
+filepond_settings_image_editor_label = Bilder vor dem Upload bearbeiten (Zuschneiden, Drehen, Spiegeln)
+filepond_settings_image_editor_notice = Zuschnitt mit freiem oder festem Seitenverhältnis, Drehung in 90°-Schritten und Spiegeln. Erreichbar im Metadaten-Dialog und bei verzögertem Upload direkt am Dateieintrag. Unterstützt JPEG, PNG und WebP.
