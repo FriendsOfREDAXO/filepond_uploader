@@ -367,8 +367,6 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
                 return '<span style="color: #999;"><i class="fa fa-ban"></i> ' . rex_escape($filename) . ' (' . rex_i18n::msg('filepond_yform_not_found') . ')</span>';
             }
 
-            $url = rex_url::backendPage('mediapool/detail', ['file_name' => $filename]);
-
             // Bei Bildern: Thumbnail (SVG direkt, andere über Media Manager)
             if ($media->isImage()) {
                 $extension = mb_strtolower($media->getExtension());

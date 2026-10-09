@@ -6,10 +6,12 @@ use rex;
 use rex_addon;
 use rex_config;
 use rex_csrf_token;
+use rex_i18n;
 use rex_login;
 use rex_url;
 use rex_view;
 
+use function is_bool;
 use function is_string;
 
 class Helper
@@ -199,6 +201,49 @@ class Helper
             . ' data-filepond-policy-types="' . rex_escape($allowedTypes) . '"'
             . ' data-filepond-policy-maxsize="' . $maxFilesizeMb . '"'
             . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"';
+    }
+
+    /**
+     * data-filepond-* Attribute aus den Einstellungen; $overrides ersetzt einzelne Werte
+     * (Schlüssel ohne Präfix, z. B. 'maxfiles' => 1), null lässt ein Attribut weg.
+     *
+     * @param array<string, string|int|bool|null> $overrides
+     */
+    public static function configAttributes(array $overrides = []): string
+    {
+        $maxPixel = Config::int('client_max_pixel', 0);
+        $quality = Config::int('client_image_quality', 0);
+
+        $attributes = array_replace([
+            'types' => Config::string('allowed_types', 'image/*,video/*,application/pdf'),
+            'maxsize' => Config::int('max_filesize', 200),
+            'maxfiles' => Config::int('max_files', 30),
+            'lang' => rex::getUser()?->getLanguage() ?: rex_i18n::getLocale(),
+            'chunk-enabled' => Config::isEnabled('enable_chunks', true),
+            'chunk-size' => Config::int('chunk_size', 5) * 1024 * 1024,
+            'title-required' => Config::isEnabled('title_required_default'),
+            'alt-required' => Config::isEnabled('alt_required_default', true),
+            'max-pixel' => $maxPixel > 0 ? $maxPixel : Config::int('max_pixel', 2100),
+            'image-quality' => $quality > 0 ? $quality : Config::int('image_quality', 90),
+            'client-resize' => Config::isEnabled('create_thumbnails', true),
+            'image-editor' => Config::isEnabled('enable_image_editor', true),
+            'ai-enabled' => Config::isEnabled('enable_ai_alt') && Config::isEnabled('enable_ai_upload_modal', true),
+            'ai-target-field' => Config::string('ai_target_field', 'med_alt'),
+            'media-url' => rex_url::media(),
+        ], $overrides);
+
+        $html = '';
+        foreach ($attributes as $name => $value) {
+            if (null === $value) {
+                continue;
+            }
+            if (is_bool($value)) {
+                $value = $value ? 'true' : 'false';
+            }
+            $html .= ' data-filepond-' . $name . '="' . rex_escape((string) $value) . '"';
+        }
+
+        return $html;
     }
 
     /** Schaltet den Bildeditor am Widget gemäß Einstellung ein oder aus. */

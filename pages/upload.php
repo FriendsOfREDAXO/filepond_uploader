@@ -1,5 +1,6 @@
 <?php
 
+use FriendsOfRedaxo\FilePondUploader\Config;
 use FriendsOfRedaxo\FilePondUploader\Helper;
 use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
 
@@ -32,50 +33,6 @@ if ($mediaPerm instanceof rex_media_perm && $mediaPerm->hasAll()) {
         }
     }
 }
-
-$currentUser = rex::getUser();
-$langCodeVal = $currentUser ? $currentUser->getLanguage() : rex_config::get('filepond_uploader', 'lang', 'en_gb');
-$langCode = is_string($langCodeVal) ? $langCodeVal : 'en_gb';
-
-// Prüfen, ob Metadaten übersprungen werden sollen (neue Einstellung)
-$skipMeta = rex_config::get('filepond_uploader', 'upload_skip_meta', false);
-
-// Prüfen, ob verzögerter Upload-Modus aktiviert ist
-$delayedUpload = rex_config::get('filepond_uploader', 'delayed_upload_mode', false);
-
-// Prüfen, ob title/alt im Metadialog required sein sollen
-$titleRequired = false;
-$altRequired = true;
-
-// Config-Werte für data-Attribute vorab typsicher extrahieren
-$cfgMaxFiles = rex_config::get('filepond_uploader', 'max_files', 30);
-$dataMaxFiles = is_numeric($cfgMaxFiles) ? (string) (int) $cfgMaxFiles : '30';
-$cfgAllowedTypes = rex_config::get('filepond_uploader', 'allowed_types', 'image/*,video/*,.pdf,.doc,.docx,.txt');
-$dataAllowedTypes = is_string($cfgAllowedTypes) ? $cfgAllowedTypes : 'image/*,video/*,.pdf,.doc,.docx,.txt';
-$cfgMaxFilesize = rex_config::get('filepond_uploader', 'max_filesize', 10);
-$dataMaxFilesize = is_numeric($cfgMaxFilesize) ? (string) (int) $cfgMaxFilesize : '10';
-$cfgClientMaxPixel = rex_config::get('filepond_uploader', 'client_max_pixel', '');
-$cfgMaxPixel = rex_config::get('filepond_uploader', 'max_pixel', 2100);
-$dataMaxPixel = is_scalar($cfgClientMaxPixel) && $cfgClientMaxPixel !== '' ? (string) $cfgClientMaxPixel : (is_numeric($cfgMaxPixel) ? (string) (int) $cfgMaxPixel : '2100');
-$cfgClientQuality = rex_config::get('filepond_uploader', 'client_image_quality', '');
-$cfgQuality = rex_config::get('filepond_uploader', 'image_quality', 90);
-$dataQuality = is_scalar($cfgClientQuality) && $cfgClientQuality !== '' ? (string) $cfgClientQuality : (is_numeric($cfgQuality) ? (string) (int) $cfgQuality : '90');
-$cfgCreateThumbnails = rex_config::get('filepond_uploader', 'create_thumbnails', '');
-$dataClientResize = (is_string($cfgCreateThumbnails) && $cfgCreateThumbnails === '|1|') ? 'true' : 'false';
-$isEnabledConfig = static function (string $key, bool $default): bool {
-    $raw = rex_config::get('filepond_uploader', $key, $default ? '1' : '0');
-
-    return in_array($raw, [1, '1', true, 'true', '|1|'], true);
-};
-
-$titleRequired = $isEnabledConfig('title_required_default', false);
-$altRequired = $isEnabledConfig('alt_required_default', true);
-
-$cfgAiEnabled = $isEnabledConfig('enable_ai_alt', false)
-    && $isEnabledConfig('enable_ai_upload_modal', true);
-$dataAiEnabled = $cfgAiEnabled ? 'true' : 'false';
-$cfgAiTargetFieldVal = rex_config::get('filepond_uploader', 'ai_target_field', 'med_alt');
-$dataAiTargetField = is_string($cfgAiTargetFieldVal) && '' !== trim($cfgAiTargetFieldVal) ? trim($cfgAiTargetFieldVal) : 'med_alt';
 
 // YCom Media Auth Defaults Panel (optional, gegated)
 $ycomAuthHtml = '';
@@ -202,25 +159,15 @@ $content = '
                 <div class="form-group" style="margin-top:15px;">
                     <label class="col-sm-2 control-label">' . rex_i18n::msg('filepond_upload_files') . '</label>
                     <div class="col-sm-10">
-                        <input type="hidden" 
+                        <input type="hidden"
                             id="filepond-upload"
                             data-widget="filepond"
                             data-filepond-cat="'.$selectedCategory.'"
-                            data-filepond-maxfiles="'.$dataMaxFiles.'"
-                            data-filepond-types="'.$dataAllowedTypes.'"
-                            data-filepond-maxsize="'.$dataMaxFilesize.'"
-                            data-filepond-lang="'.$langCode.'"
-                            '.Helper::imageEditorAttribute().'
-                            data-filepond-skip-meta="'.($skipMeta ? 'true' : 'false').'"
-                            data-filepond-delayed-upload="'.($delayedUpload ? 'true' : 'false').'"
-                            data-filepond-title-required="'.($titleRequired ? 'true' : 'false').'"
-                            data-filepond-alt-required="'.($altRequired ? 'true' : 'false').'"
-                            data-filepond-opener-field="'.rex_escape($openerInputField).'"
-                            data-filepond-max-pixel="'.$dataMaxPixel.'" 
-                            data-filepond-image-quality="'.$dataQuality.'" 
-                            data-filepond-client-resize="'.$dataClientResize.'"
-                            data-filepond-ai-enabled="'.$dataAiEnabled.'"
-                            data-filepond-ai-target-field="'.rex_escape($dataAiTargetField).'"
+                            '.Helper::configAttributes([
+                                'skip-meta' => Config::isEnabled('upload_skip_meta'),
+                                'delayed-upload' => Config::isEnabled('delayed_upload_mode'),
+                                'opener-field' => $openerInputField,
+                            ]).'
                             value=""
                         >
                     </div>

@@ -45,10 +45,11 @@ if ($mediaPerm->hasAll()) {
 }
 
 // API Endpoint
+// Unescaped, die URL landet per json_encode im JavaScript
 $apiEndpoint = rex_url::backendController([
     'rex-api-call' => 'filepond_alt_checker',
     '_csrf_token' => Helper::csrfToken(),
-]);
+], false);
 
 // Prüfen ob med_alt Feld existiert
 $altFieldExists = AltTextChecker::checkAltFieldExists();

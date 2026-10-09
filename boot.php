@@ -107,30 +107,12 @@ if (rex::isBackend() && rex::getUser()) {
             return;
         }
 
-        $currentUser = rex::getUser();
-        $langCode = $currentUser ? $currentUser->getLanguage() : 'en_gb';
-        $maxPixel = Config::int('client_max_pixel', 0) > 0 ? Config::int('client_max_pixel', 0) : Config::int('max_pixel', 2100);
-        $quality = Config::int('client_image_quality', 0) > 0 ? Config::int('client_image_quality', 0) : Config::int('image_quality', 90);
-
         $inject = '<div id="filepond-mp3-upload-provider-wrap" style="display:none">'
             . '<input type="file" multiple'
             . ' id="filepond-mp3-upload-provider"'
             . ' data-widget="filepond"'
             . ' data-filepond-cat="0"'
-            . ' data-filepond-types="' . rex_escape(Config::string('allowed_types', 'image/*,video/*,application/pdf')) . '"'
-            . ' data-filepond-maxsize="' . Config::int('max_filesize', 200) . '"'
-            . ' data-filepond-lang="' . rex_escape($langCode) . '"'
-            . Helper::imageEditorAttribute()
-            . ' data-filepond-skip-meta="false"'
-            . ' data-filepond-delayed-upload="false"'
-            . ' data-filepond-chunk-enabled="' . (Config::isEnabled('enable_chunks', true) ? 'true' : 'false') . '"'
-            . ' data-filepond-chunk-size="' . (Config::int('chunk_size', 5) * 1024 * 1024) . '"'
-            . ' data-filepond-title-required="' . (Config::isEnabled('title_required_default') ? 'true' : 'false') . '"'
-            . ' data-filepond-alt-required="' . (Config::isEnabled('alt_required_default', true) ? 'true' : 'false') . '"'
-            . ' data-filepond-max-pixel="' . $maxPixel . '"'
-            . ' data-filepond-image-quality="' . $quality . '"'
-            . ' data-filepond-client-resize="' . (Config::isEnabled('create_thumbnails', true) ? 'true' : 'false') . '"'
-            . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"'
+            . Helper::configAttributes(['skip-meta' => false, 'delayed-upload' => false])
             . ' />'
             . '</div>';
 
@@ -217,17 +199,16 @@ if (rex::isBackend() && rex::getUser() && Config::isEnabled('enable_mediapool_re
             . ' id="' . rex_escape($inputId) . '"'
             . ' data-widget="filepond"'
             . ' data-filepond-cat="' . (int) $media->getCategoryId() . '"'
-            . ' data-filepond-maxfiles="1"'
-            . ' data-filepond-types="' . rex_escape($allowedTypes) . '"'
-            . ' data-filepond-maxsize="' . Config::int('max_filesize', 200) . '"'
-            . ' data-filepond-lang="' . rex_escape((string) rex::getUser()?->getLanguage()) . '"'
-            . ' data-filepond-skip-meta="true"'
-            . ' data-filepond-delayed-upload="false"'
-            . ' data-filepond-title-required="false"'
-            . ' data-filepond-alt-required="false"'
-            . ' data-filepond-chunk-enabled="' . (Config::isEnabled('enable_chunks', true) ? 'true' : 'false') . '"'
-            . ' data-filepond-chunk-size="' . (Config::int('chunk_size', 5) * 1024 * 1024) . '"'
-            . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"'
+            . Helper::configAttributes([
+                'maxfiles' => 1,
+                'types' => $allowedTypes,
+                'skip-meta' => true,
+                'delayed-upload' => false,
+                'title-required' => false,
+                'alt-required' => false,
+                'image-editor' => false,
+                'ai-enabled' => false,
+            ])
             . ' data-filepond-replace-file-id="' . $fileId . '"'
             . ' data-filepond-reload-on-success="true"'
             . ' data-filepond-redirect-url="' . rex_escape($redirectUrl) . '"'
