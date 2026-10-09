@@ -640,3 +640,11 @@ html.fp-image-editor-open {
         margin: -11px 0 0 -11px;
     }
 }
+
+.filepond-invalid-notice {
+    margin: -0.5em 0 1em;
+    padding: 6px 10px;
+    color: #fff;
+    background: var(--fp-danger, #c74343);
+    border-radius: 4px;
+}

@@ -43,6 +43,7 @@
                 uploadButton: 'Dateien hochladen',
                 aiSuggestBtn: 'AI-Vorschlag',
                 editImage: 'Bild bearbeiten',
+                invalidField: 'Bitte zuerst die abgelehnten Dateien entfernen.',
                 aiSuggestBusy: 'Erzeuge Vorschlag...',
                 aiSuggestError: 'AI-Vorschlag fehlgeschlagen',
                 aiSuggestInvalidResponse: 'ungültige Server-Antwort',
@@ -72,6 +73,7 @@
                 uploadButton: 'Upload files',
                 aiSuggestBtn: 'AI Suggest',
                 editImage: 'Edit image',
+                invalidField: 'Please remove the rejected files first.',
                 aiSuggestBusy: 'Generating suggestion...',
                 aiSuggestError: 'AI suggestion failed',
                 aiSuggestInvalidResponse: 'invalid server response',
@@ -1785,6 +1787,7 @@
                     }
                 },
                 labelIdle: t.labelIdle,
+                labelInvalidField: t.invalidField,
                 styleButtonRemoveItemPosition: 'right',
                 styleLoadIndicatorPosition: 'right',
                 styleProgressIndicatorPosition: 'right',
@@ -1821,6 +1824,46 @@
             
             // Speichere Referenz auf pond-Instanz im input-Element
             input.pondInstance = pond;
+
+            // Hochgeladenen Dateinamen in den Feldwert übernehmen (bei maxFiles=1 ersetzen)
+            const rememberServerId = (serverId) => {
+                if ((parseInt(input.dataset.filepondMaxfiles) || 30) === 1) {
+                    input.value = serverId;
+                    return;
+                }
+                const currentValue = input.value ? input.value.split(',').filter(Boolean) : [];
+                if (!currentValue.includes(serverId)) {
+                    currentValue.push(serverId);
+                    input.value = currentValue.join(',');
+                }
+            };
+
+            // Abgelehnte Dateien (Typ, Größe) blockieren das Absenden; der Browser kann seinen Hinweis
+            // am versteckten Datei-Input nicht anzeigen, daher ein sichtbarer Hinweis am Feld
+            const hostForm = input.form || pond.element.closest('form');
+            if (hostForm) {
+                let invalidNotice = null;
+                const hasRejectedFiles = () => pond.getFiles().some(item => item.status === FilePond.FileStatus.LOAD_ERROR);
+                hostForm.addEventListener('invalid', (event) => {
+                    if (!pond.element.contains(event.target)) {
+                        return;
+                    }
+                    if (!invalidNotice) {
+                        invalidNotice = document.createElement('div');
+                        invalidNotice.className = 'filepond-invalid-notice';
+                        invalidNotice.setAttribute('role', 'alert');
+                        invalidNotice.textContent = t.invalidField;
+                        pond.element.insertAdjacentElement('afterend', invalidNotice);
+                    }
+                    pond.element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }, true);
+                pond.on('removefile', () => {
+                    if (invalidNotice && !hasRejectedFiles()) {
+                        invalidNotice.remove();
+                        invalidNotice = null;
+                    }
+                });
+            }
             
             // Speichere die Referenz auch im DOM-Element, um sie später leichter zu finden
             const pondRoot = pond.element.parentNode;
@@ -1877,10 +1920,10 @@
                     const formEl = pondRoot.closest('form');
                     if (formEl) {
                         formEl.addEventListener('submit', function (e) {
-                            // Nur neu hinzugefügte, noch nicht hochgeladene Dateien
+                            // Nur gültige, noch nicht hochgeladene Dateien; abgelehnte (z. B. zu groß) zeigen ihren Fehler bereits
                             const pending = pond.getFiles().filter(item =>
                                 item.origin === FilePond.FileOrigin.INPUT
-                                && item.status !== FilePond.FileStatus.PROCESSING_COMPLETE
+                                && (item.status === FilePond.FileStatus.IDLE || item.status === FilePond.FileStatus.PROCESSING_ERROR)
                             );
                             if (pending.length === 0) {
                                 return;
@@ -1889,14 +1932,23 @@
                             e.preventDefault();
                             // Mehrere Felder im selben Formular: erst absenden, wenn alle fertig sind
                             formEl.filepondPending = formEl.filepondPending || new Set();
+                            const submitter = e.submitter || null;
                             const upload = pond.processFiles(pending.map(item => item.id));
                             formEl.filepondPending.add(upload);
-                            upload.then(() => {
+                            upload.then((items) => {
+                                // processfile feuert erst nach dem Promise, Werte daher direkt übernehmen
+                                (items || []).forEach(item => item.serverId && rememberServerId(item.serverId));
                                 formEl.filepondPending.delete(upload);
                                 if (formEl.filepondPending.size === 0) {
-                                    HTMLFormElement.prototype.submit.call(formEl);
+                                    // requestSubmit behält den geklickten Button (z. B. YForm "übernehmen")
+                                    if (typeof formEl.requestSubmit === 'function') {
+                                        formEl.requestSubmit(submitter && submitter.form === formEl ? submitter : undefined);
+                                    } else {
+                                        HTMLFormElement.prototype.submit.call(formEl);
+                                    }
                                 }
                             }).catch(() => {
+                                // Fehler oder abgebrochener Metadaten-Dialog: Formular bleibt offen
                                 formEl.filepondPending.delete(upload);
                             });
                         });
@@ -1920,20 +1972,7 @@
             // Event handlers
             pond.on('processfile', (error, file) => {
                 if (!error && file.serverId) {
-                    // Prüfen, ob maxFiles=1 ist - in diesem Fall ersetzen wir den kompletten Wert
-                    const maxFiles = parseInt(input.dataset.filepondMaxfiles) || 30;
-                    
-                    if (maxFiles === 1) {
-                        // Bei maxFiles=1 kompletten Wert ersetzen statt anzuhängen
-                        input.value = file.serverId;
-                    } else {
-                        // Standardverhalten: An bestehenden Wert anhängen
-                        const currentValue = input.value ? input.value.split(',').filter(Boolean) : [];
-                        if (!currentValue.includes(file.serverId)) {
-                            currentValue.push(file.serverId);
-                            input.value = currentValue.join(',');
-                        }
-                    }
+                    rememberServerId(file.serverId);
 
                     input.dispatchEvent(new CustomEvent('filepond:uploaded', { bubbles: true, detail: { filename: file.serverId } }));
                     

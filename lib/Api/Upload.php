@@ -109,7 +109,10 @@ class Upload extends rex_api_function
                 default => throw new rex_api_exception('Invalid function'),
             };
         } catch (Throwable $e) {
-            rex_logger::logException($e);
+            // Abgelehnte Anfragen (rex_api_exception) sind erwartbar und landen nicht im Systemlog
+            if (!$e instanceof rex_api_exception) {
+                rex_logger::logException($e);
+            }
             // Nur eigene Meldungen nach aussen geben, keine Pfade oder Interna
             $this->sendResponse(['error' => $e instanceof rex_api_exception ? $e->getMessage() : 'Upload failed'], rex_response::HTTP_FORBIDDEN);
         }
