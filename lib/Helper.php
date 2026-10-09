@@ -131,17 +131,46 @@ class Helper
     }
 
     /**
-     * Signiert eine Upload-Kategorie für Frontend-Widgets: der Client kann die Kategorie
-     * nicht mehr frei wählen, der Server akzeptiert nur die signierte.
+     * Signiert Kategorie und Feldgrenzen eines Widgets. Der Server übernimmt nur signierte
+     * Werte, Kategorie, Dateitypen und Größe lassen sich clientseitig nicht ändern.
      */
-    public static function signCategory(int $categoryId): string
+    public static function signUploadPolicy(int $categoryId, string $allowedTypes = '', int $maxFilesizeMb = 0): string
     {
-        return hash_hmac('sha256', 'filepond_category:' . $categoryId, self::secret());
+        return hash_hmac('sha256', 'filepond_policy:' . $categoryId . '|' . $allowedTypes . '|' . $maxFilesizeMb, self::secret());
     }
 
-    public static function isValidCategorySignature(int $categoryId, string $signature): bool
+    public static function isValidUploadPolicy(int $categoryId, string $allowedTypes, int $maxFilesizeMb, string $signature): bool
     {
-        return '' !== $signature && hash_equals(self::signCategory($categoryId), $signature);
+        return '' !== $signature && hash_equals(self::signUploadPolicy($categoryId, $allowedTypes, $maxFilesizeMb), $signature);
+    }
+
+    /**
+     * Prüft Datei gegen eine Typliste wie "image/*,application/pdf,.docx".
+     */
+    public static function isTypeAllowed(string $allowedTypes, string $filename, string $mimeType): bool
+    {
+        $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        $mimeType = strtolower($mimeType);
+
+        foreach (explode(',', strtolower($allowedTypes)) as $type) {
+            $type = trim($type);
+            if ('' === $type) {
+                continue;
+            }
+            if (str_starts_with($type, '.')) {
+                if (substr($type, 1) === $extension) {
+                    return true;
+                }
+            } elseif (str_ends_with($type, '/*')) {
+                if (str_starts_with($mimeType, substr($type, 0, -1))) {
+                    return true;
+                }
+            } elseif ($type === $mimeType) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -153,11 +182,19 @@ class Helper
         return 1 === preg_match('/^filepond_[0-9a-f]{13,14}\.[0-9]{1,10}$/', $fileId);
     }
 
-    /** Attribute für ein Upload-Widget: CSRF-Token, signierte Kategorie, Medien-URL. */
-    public static function widgetSecurityAttributes(int $categoryId): string
+    /**
+     * Attribute für ein Upload-Widget: CSRF-Token, signierte Kategorie und Feldgrenzen, Medien-URL.
+     * Ohne $allowedTypes/$maxFilesizeMb gelten serverseitig nur die globalen Einstellungen.
+     */
+    public static function widgetSecurityAttributes(int $categoryId, string $allowedTypes = '', int $maxFilesizeMb = 0): string
     {
+        $allowedTypes = trim($allowedTypes);
+        $maxFilesizeMb = max(0, $maxFilesizeMb);
+
         return ' data-filepond-csrf="' . rex_escape(self::csrfToken()) . '"'
-            . ' data-filepond-cat-sig="' . rex_escape(self::signCategory($categoryId)) . '"'
+            . ' data-filepond-cat-sig="' . rex_escape(self::signUploadPolicy($categoryId, $allowedTypes, $maxFilesizeMb)) . '"'
+            . ' data-filepond-policy-types="' . rex_escape($allowedTypes) . '"'
+            . ' data-filepond-policy-maxsize="' . $maxFilesizeMb . '"'
             . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"';
     }
 

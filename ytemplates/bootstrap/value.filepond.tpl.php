@@ -119,7 +119,7 @@ if (class_exists(Helper::class)) {
        value="<?= rex_escape((string) $value) ?>"
        data-widget="filepond"
        data-filepond-cat="<?= rex_escape((string) $dataCatId) ?>"
-      <?= Helper::widgetSecurityAttributes((int) $dataCatId) ?>
+      <?= Helper::widgetSecurityAttributes((int) $dataCatId, (string) $dataTypes, (int) $dataMaxSize) ?>
        data-filepond-maxfiles="<?= rex_escape((string) $dataMaxFiles) ?>"
        data-filepond-types="<?= rex_escape((string) $dataTypes) ?>"
        data-filepond-maxsize="<?= rex_escape((string) $dataMaxSize) ?>"

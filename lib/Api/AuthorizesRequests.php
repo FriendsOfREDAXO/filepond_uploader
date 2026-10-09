@@ -20,7 +20,7 @@ use function is_string;
  *
  * - `token`:    Request mit gültigem `api_token` (externer Client ohne Session), kein CSRF-Token nötig.
  * - `backend`:  angemeldeter Backend-User, CSRF-Token, Rechte der Medienkategorie.
- * - `frontend`: YCom-User oder API-Token aus der Session, CSRF-Token, nur signierte Kategorien.
+ * - `frontend`: YCom-User oder API-Token aus der Session, CSRF-Token, nur signierte Kategorien und Feldgrenzen.
  */
 trait AuthorizesRequests
 {
@@ -28,6 +28,11 @@ trait AuthorizesRequests
     protected string $caller = '';
 
     protected ?rex_user $backendUser = null;
+
+    /** Signierte Feldgrenzen des Widgets, '' bzw. 0 = nur globale Einstellungen. */
+    protected string $policyTypes = '';
+
+    protected int $policyMaxFilesizeMb = 0;
 
     protected function authorize(): void
     {
@@ -84,8 +89,16 @@ trait AuthorizesRequests
             throw new rex_api_exception('No permission for this media category');
         }
 
-        if ('frontend' === $this->caller && !Helper::isValidCategorySignature($categoryId, rex_request('category_sig', 'string', ''))) {
-            throw new rex_api_exception('Invalid category');
+        // Frontend braucht immer eine Signatur, im Backend gilt sie, sobald das Widget eine mitschickt
+        $signature = rex_request('category_sig', 'string', '');
+        if ('frontend' === $this->caller || ('backend' === $this->caller && '' !== $signature)) {
+            $types = trim(rex_request('policy_types', 'string', ''));
+            $maxFilesize = max(0, rex_request('policy_maxsize', 'int', 0));
+            if (!Helper::isValidUploadPolicy($categoryId, $types, $maxFilesize, $signature)) {
+                throw new rex_api_exception('Invalid category');
+            }
+            $this->policyTypes = $types;
+            $this->policyMaxFilesizeMb = $maxFilesize;
         }
 
         return $categoryId;

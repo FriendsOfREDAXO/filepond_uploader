@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use FriendsOfRedaxo\FilePondUploader\Config;
 use FriendsOfRedaxo\FilePondUploader\Helper;
 use FriendsOfRedaxo\FilePondUploader\MediaCleanup;
 use FriendsOfRedaxo\FilePondUploader\MetadataWriter;
@@ -113,6 +114,17 @@ class Upload extends rex_api_function
         }
 
         return new rex_api_result(true);
+    }
+
+    /** Größte erlaubte Dateigröße in Byte: globale Einstellung, ggf. enger durch das Feld. */
+    protected function maxFilesize(): int
+    {
+        $maxMb = Config::int('max_filesize', 200);
+        if ($this->policyMaxFilesizeMb > 0) {
+            $maxMb = min($maxMb, $this->policyMaxFilesizeMb);
+        }
+
+        return $maxMb * 1024 * 1024;
     }
 
     /**
@@ -305,9 +317,7 @@ class Upload extends rex_api_function
 
         $replaceFileId = rex_request('replace_file_id', 'int', 0);
 
-        // Validierung der Dateigröße
-        $maxSize = (int) rex_config::get('filepond_uploader', 'max_filesize', 200) * 1024 * 1024;
-        if ($file['size'] > $maxSize) {
+        if ($file['size'] > $this->maxFilesize()) {
             throw new rex_api_exception('File too large');
         }
 
@@ -400,6 +410,11 @@ class Upload extends rex_api_function
         // Dann prüfen, ob der MIME-Typ zur Dateiendung passt
         if (!rex_mediapool::isAllowedMimeType($file['tmp_name'], $file['name'])) {
             $this->log('error', "File MIME type not allowed: {$file['type']} for extension .$fileExtension");
+            throw new rex_api_exception('File type not allowed');
+        }
+
+        if ('' !== $this->policyTypes && !Helper::isTypeAllowed($this->policyTypes, $file['name'], $file['type'])) {
+            $this->log('error', "File type not allowed by field: {$file['type']}");
             throw new rex_api_exception('File type not allowed');
         }
 
@@ -1105,7 +1120,7 @@ class Upload extends rex_api_function
                 throw new rex_api_exception('Upload was not prepared');
             }
 
-            $maxSize = (int) rex_config::get('filepond_uploader', 'max_filesize', 200) * 1024 * 1024;
+            $maxSize = $this->maxFilesize();
             $out = fopen($tmpFile, 'w');
             if (false === $out) {
                 throw new rex_api_exception('Upload failed');

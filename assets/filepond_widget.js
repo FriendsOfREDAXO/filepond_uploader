@@ -25,6 +25,8 @@
                 labelIdle: 'Dateien hierher ziehen oder <span class="filepond--label-action">durchsuchen</span>',
                 metaTitle: 'Metadaten für',
                 titleLabel: 'Titel:',
+                titleLangLabel: 'Titel (mehrsprachig):',
+                titleInternalHint: '(nur für interne Verwaltung)',
                 altLabel: 'Alt-Text:',
                 altNotice: 'Alternativtext für Screenreader und SEO',
                 decorativeLabel: 'Dekoratives Bild (kein Alt-Text erforderlich)',
@@ -51,6 +53,8 @@
                 labelIdle: 'Drag & Drop your files or <span class="filepond--label-action">Browse</span>',
                 metaTitle: 'Metadata for',
                 titleLabel: 'Title:',
+                titleLangLabel: 'Title (multilingual):',
+                titleInternalHint: '(internal use only)',
                 altLabel: 'Alt Text:',
                 altNotice: 'Alternative text for screen readers and SEO',
                 decorativeLabel: 'Decorative Image (no alt text required)',
@@ -239,6 +243,8 @@
             const appendSecurity = (formData) => {
                 formData.append('_csrf_token', csrfToken());
                 formData.append('category_sig', input.dataset.filepondCatSig || '');
+                formData.append('policy_types', input.dataset.filepondPolicyTypes || '');
+                formData.append('policy_maxsize', input.dataset.filepondPolicyMaxsize || '0');
             };
             const mediaUrl = input.dataset.filepondMediaUrl || '/media/';
 
@@ -251,6 +257,7 @@
            // console.log('FilePond input element found:', input);
             const lang = input.dataset.filepondLang || document.documentElement.lang || 'de_de';
             const t = translations[lang] || translations['de_de'];
+            const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const replaceFileId = input.dataset.filepondReplaceFileId || '';
             const isReplaceMode = /^\d+$/.test(replaceFileId) && parseInt(replaceFileId, 10) > 0;
             const reloadOnSuccess = input.dataset.filepondReloadOnSuccess === 'true';
@@ -606,144 +613,6 @@
                 });
             };
             
-            // Standard-Dialog (Fallback)
-            const createStandardMetadataDialog = (file, existingMetadata = null) => {
-                return new Promise((resolve, reject) => {
-                    const form = document.createElement('div');
-                    form.className = 'simple-modal-grid';
-
-                    // Preview Container (verwendet neue Preview-Funktion)
-                    const previewCol = document.createElement('div');
-                    previewCol.className = 'simple-modal-col-4';
-                    const previewContainer = document.createElement('div');
-                    previewContainer.className = 'simple-modal-preview';
-                    
-                    // Verwende die neue wiederverwendbare Preview-Funktion
-                    createFilePreview(file, previewContainer);
-                    
-                    previewCol.appendChild(previewContainer);
-
-                    // Form Fields
-                    const formCol = document.createElement('div');
-                    formCol.className = 'simple-modal-col-8';
-                    
-                    // Prüfen, ob es sich um ein Bild handelt
-                    const isImage = file.type?.startsWith('image/') || 
-                                    (file instanceof File && file.type.startsWith('image/'));
-                    
-                    formCol.innerHTML = `
-                        <div class="simple-modal-form-group">
-                            <label for="title">${t.titleLabel}</label>
-                            <input type="text" id="title" name="title" class="simple-modal-input" required value="${existingMetadata?.title || ''}">
-                        </div>
-                        ${isImage ? `
-                        <div class="simple-modal-form-group" id="alt-text-group">
-                            <label for="alt">${t.altLabel}</label>
-                            <input type="text" id="alt" name="alt" class="simple-modal-input" required value="${existingMetadata?.alt || ''}">
-                            <div class="help-text">${t.altNotice}</div>
-                        </div>
-                        <div class="simple-modal-form-group">
-                            <div class="simple-modal-checkbox-wrapper">
-                                <input type="checkbox" id="decorative" name="decorative" class="simple-modal-checkbox" ${existingMetadata?.decorative ? 'checked' : ''}>
-                                <label for="decorative">${t.decorativeLabel}</label>
-                            </div>
-                            <div class="help-text">${t.decorativeNotice}</div>
-                        </div>
-                        ` : ''}
-                        <div class="simple-modal-form-group">
-                            <label for="copyright">${t.copyrightLabel}</label>
-                            <input type="text" id="copyright" name="copyright" class="simple-modal-input" value="${existingMetadata?.copyright || ''}">
-                        </div>
-                    `;
-
-                    form.appendChild(previewCol);
-                    form.appendChild(formCol);
-
-                    const modal = new SimpleModal();
-
-                    // Event-Handler für die "Dekorativ"-Checkbox, wenn vorhanden
-                    if (isImage) {
-                        setTimeout(() => {
-                            const decorativeCheckbox = form.querySelector('#decorative');
-                            const altInput = form.querySelector('#alt');
-                            const altGroup = form.querySelector('#alt-text-group');
-                            
-                            if (decorativeCheckbox && altInput && altGroup) {
-                                // Initialen Zustand setzen
-                                if (decorativeCheckbox.checked) {
-                                    altInput.removeAttribute('required');
-                                    altGroup.classList.add('disabled');
-                                    altInput.disabled = true;
-                                }
-                                
-                                // Event-Handler für Änderungen
-                                decorativeCheckbox.addEventListener('change', function() {
-                                    if (this.checked) {
-                                        // Wenn dekorativ, dann Alt-Text nicht erforderlich
-                                        altInput.removeAttribute('required');
-                                        altGroup.classList.add('disabled');
-                                        altInput.disabled = true;
-                                        // Alt-Text auf leer setzen (optional)
-                                        altInput.value = '';
-                                    } else {
-                                        // Wenn nicht dekorativ, Alt-Text erforderlich
-                                        altInput.setAttribute('required', 'required');
-                                        altGroup.classList.remove('disabled');
-                                        altInput.disabled = false;
-                                    }
-                                });
-                            }
-                        }, 100); // Kurze Verzögerung für DOM-Rendering
-                    }
-
-                    modal.show({
-                        title: `${t.metaTitle} ${file.filename || file.name || 'upload'}`,
-                        content: form,
-                        buttons: [
-                            {
-                                text: t.cancelBtn,
-                                closeModal: true,
-                                handler: () => reject(new Error('Metadata input cancelled'))
-                            },
-                            {
-                                text: t.saveBtn,
-                                primary: true,
-                                handler: () => {
-                                    const titleInput = form.querySelector('[name="title"]');
-                                    const altInput = form.querySelector('[name="alt"]');
-                                    const copyrightInput = form.querySelector('[name="copyright"]');
-                                    const decorativeCheckbox = form.querySelector('#decorative');
-                                    const isDecorative = decorativeCheckbox && decorativeCheckbox.checked;
-
-                                    // Alt-Text ist nur für Bilder erforderlich, die nicht als dekorativ markiert sind
-                                    // Bei anderen Dateitypen ist kein Alt-Text erforderlich
-                                    let isValid = titleInput.value;
-                                    
-                                    if (isImage && altInput && !isDecorative) {
-                                        // Nur bei Bildern, die nicht dekorativ sind, Alt-Text prüfen
-                                        isValid = isValid && altInput.value;
-                                    }
-
-                                    if (isValid) {
-                                        const metadata = {
-                                            title: titleInput.value,
-                                            alt: (isImage && altInput) ? (isDecorative ? '' : altInput.value) : '',
-                                            copyright: copyrightInput.value,
-                                            decorative: isDecorative || false
-                                        };
-                                        modal.close();
-                                        resolve(metadata);
-                                    } else {
-                                        if (!titleInput.value) titleInput.reportValidity();
-                                        if (isImage && !isDecorative && altInput && !altInput.value) altInput.reportValidity();
-                                    }
-                                }
-                            }
-                        ]
-                    });
-                });
-            };
-            
             // MetaInfo-Integration Hilfsfunktionen
             
             // Sortiert Felder in gewünschter Reihenfolge
@@ -763,30 +632,27 @@
                 return sorted;
             };
             
-            // Hilfsfunktion für Übersetzungen basierend auf aktueller Sprache
-            const getFieldTranslation = (fieldName, lang = 'de_de') => {
-                const translationMap = {
-                    'title': translations[lang]?.titleLabel || 'Titel:',
-                    'med_title_lang': 'Titel (Mehrsprachig):',
-                    'med_alt': translations[lang]?.altLabel || 'Alt-Text:',
-                    'med_copyright': translations[lang]?.copyrightLabel || 'Copyright:',
-                    'med_description': translations[lang]?.descriptionLabel || 'Beschreibung:'
-                };
-                return translationMap[fieldName] || null;
-            };
+            const getFieldTranslation = (fieldName) => ({
+                title: t.titleLabel,
+                med_title_lang: t.titleLangLabel,
+                med_alt: t.altLabel,
+                med_copyright: t.copyrightLabel,
+                med_description: t.descriptionLabel
+            })[fieldName] || null;
 
             const getAiMagicButtonMarkup = (fieldName, isImage) => {
                 if (!aiEnabled || fieldName !== aiTargetField || !isImage) {
                     return '';
                 }
 
-                return `<button type="button" class="btn btn-default btn-xs filepond-ai-magic-btn" data-ai-target="${fieldName}" style="margin-left:8px;"><img src="${magicIconUrl}" class="filepond-magic-icon" alt="" aria-hidden="true"> ${t.aiSuggestBtn}</button><span class="help-text" data-ai-status-for="${fieldName}" style="margin-left:8px;"></span>`;
+                return `<button type="button" class="btn btn-default btn-xs filepond-ai-magic-btn" data-ai-target="${esc(fieldName)}" style="margin-left:8px;"><img src="${magicIconUrl}" class="filepond-magic-icon" alt="" aria-hidden="true"> ${esc(t.aiSuggestBtn)}</button><span class="help-text" data-ai-status-for="${esc(fieldName)}" style="margin-left:8px;"></span>`;
             };
             
             // Erstellt HTML für ein MetaInfo-Feld
             const createFieldHTML = (field, existingMetadata, currentInput, modalId = '') => {
-                const fieldId = `field_${field.name}`;
-                const uniqueFieldId = modalId ? `${field.name}_${modalId}` : field.name;
+                const fieldName = esc(field.name);
+                const fieldId = `field_${fieldName}`;
+                const uniqueFieldId = modalId ? `${fieldName}_${modalId}` : fieldName;
                 const isImage = currentFileType && currentFileType.startsWith('image/');
                 let html = '';
                 
@@ -799,13 +665,12 @@
                 }
                 
                 // Übersetztes Label verwenden
-                const translatedLabel = getFieldTranslation(field.name) || field.label;
+                const translatedLabel = esc(getFieldTranslation(field.name) || field.label);
                 
                 if (field.multilingual && field.languages && field.languages.length > 0) {
                     // Mehrsprachiges Feld mit Tabs
-                    const uniqueFieldId = modalId ? `${field.name}_${modalId}` : field.name;
                     
-                    html += `<div class="simple-modal-form-group" data-field="${field.name}">`;
+                    html += `<div class="simple-modal-form-group" data-field="${fieldName}">`;
                     html += `<label class="simple-modal-label">`;
                     html += `<i class="fa fa-globe"></i> ${translatedLabel}`;
                     html += `</label>`;
@@ -817,15 +682,7 @@
                         html += `<div class="decorative-checkbox-group">`;
                         html += `<label for="${decorativeCheckboxId}" class="simple-modal-checkbox-label">`;
                         html += `<input type="checkbox" id="${decorativeCheckboxId}" class="decorative-checkbox-global">`;
-                        html += `${translations.de_de.decorativeLabel}`; // Fallback auf de_de, besser wäre widget.translations... aber t.decorativeLabel ist oben definiert? Nein, t ist in createMetadataDialog scope.
-                        // Wir haben keinen Zugriff auf t hier, da createFieldHTML nicht im Scope von t ist?
-                        // Warte, createFieldHTML ist im IIFE scope definiert. t wäre im createMetadataDialog scope.
-                        // Aber createFieldHTML wird in createEnhancedMetadataDialog aufgerufen, welches auch nicht im Scope von t ist?
-                        // DOCH! createEnhancedMetadataDialog ist im InitFilePond Scope. t ist im InitFilePond definiert.
-                        // createFieldHTML ist im initFilePond definiert. Also sollte t verfügbar sein?
-                        // Ja, wenn t im Outer Scope definiert ist.
-                        // Aber ich sehe const t = ... am Anfang von initFilePond.
-                        // Und createFieldHTML ist am Ende.
+                        html += esc(t.decorativeLabel);
                         html += `</label>`;
                         html += `</div>`;
                     }
@@ -837,14 +694,15 @@
                     html += `<div class="fp-tabs-nav" style="display: flex; border-bottom: 1px solid var(--modal-color-border, #ccc); background: var(--modal-color-footer, rgba(0,0,0,0.05));">`;
                     
                     field.languages.forEach((lang, index) => {
+                        const langCode = esc(lang.code);
                         const isActive = index === 0 ? 'active' : '';
                         // Inline styles für Buttons mit CSS Variables
                         const activeStyle = index === 0 ? 
                             'font-weight: bold; background: var(--modal-color-bg, #fff); border-bottom: 2px solid #4b9ad9; color: var(--modal-color-text, inherit); opacity: 1;' : 
                             'opacity: 0.7; border-bottom: 2px solid transparent; color: var(--modal-color-text, inherit);';
                         
-                        html += `<button type="button" class="fp-tab-btn ${isActive}" data-group="${uniqueFieldId}" data-lang="${lang.code}" style="border: none; background: transparent; padding: 8px 12px; cursor: pointer; font-size: 12px; margin-bottom: -1px; ${activeStyle}">`;
-                        html += lang.code.toUpperCase();
+                        html += `<button type="button" class="fp-tab-btn ${isActive}" data-group="${uniqueFieldId}" data-lang="${langCode}" style="border: none; background: transparent; padding: 8px 12px; cursor: pointer; font-size: 12px; margin-bottom: -1px; ${activeStyle}">`;
+                        html += esc(lang.code.toUpperCase());
                         html += `</button>`;
                     });
                     
@@ -855,9 +713,10 @@
                     
                     for (const lang of field.languages) {
                         const displayStyle = field.languages.indexOf(lang) === 0 ? 'block' : 'none';
-                        const langValue = existingMetadata?.[field.name]?.[lang.code] || '';
+                        const langValue = esc(existingMetadata?.[field.name]?.[lang.code] || '');
+                        const langCode = esc(lang.code);
                         
-                        html += `<div class="fp-tab-pane" id="tab_${uniqueFieldId}_${lang.code}" style="display: ${displayStyle};">`;
+                        html += `<div class="fp-tab-pane" id="tab_${uniqueFieldId}_${langCode}" style="display: ${displayStyle};">`;
                         
                         // Required-Attribut Logic
                         let langRequired = '';
@@ -869,11 +728,11 @@
                         const langDisabled = (field.name === 'med_alt' && isImage && altRequiredByDefault) ? 'data-decorative-target="true"' : '';
                         
                         if (field.type === 'textarea') {
-                            html += `<textarea class="simple-modal-input" name="${field.name}[${lang.code}]" `;
-                            html += `data-field="${field.name}" data-lang="${lang.code}" rows="3" ${langRequired} ${langDisabled}>${langValue}</textarea>`;
+                            html += `<textarea class="simple-modal-input" name="${fieldName}[${langCode}]" `;
+                            html += `data-field="${fieldName}" data-lang="${langCode}" rows="3" ${langRequired} ${langDisabled}>${langValue}</textarea>`;
                         } else {
-                            html += `<input type="text" class="simple-modal-input" name="${field.name}[${lang.code}]" `;
-                            html += `data-field="${field.name}" data-lang="${lang.code}" value="${langValue}" ${langRequired} ${langDisabled}>`;
+                            html += `<input type="text" class="simple-modal-input" name="${fieldName}[${langCode}]" `;
+                            html += `data-field="${fieldName}" data-lang="${langCode}" value="${langValue}" ${langRequired} ${langDisabled}>`;
                         }
                         html += `</div>`;
                     }
@@ -884,11 +743,11 @@
 
                 } else {
                     // Standard-Feld
-                    html += `<div class="simple-modal-form-group" data-field="${field.name}">`;
+                    html += `<div class="simple-modal-form-group" data-field="${fieldName}">`;
                     html += `<label for="${fieldId}" class="simple-modal-label">${translatedLabel}`;
                     
                     if (field.name === 'title') {
-                        html += ` <small class="text-muted">(nur für interne Verwaltung)</small>`;
+                        html += ` <small class="text-muted">${esc(t.titleInternalHint)}</small>`;
                     }
                     
                     html += `</label>`;
@@ -896,7 +755,7 @@
                     
                     // Globale dekorative Checkbox wird nur einmal angezeigt (bei mehrsprachigen Feldern)
                     
-                    const fieldValue = existingMetadata?.[field.name] || '';
+                    const fieldValue = esc(existingMetadata?.[field.name] || '');
                     
                     // Required-Attribut für verschiedene Felder
                     let isRequired = '';
@@ -915,11 +774,11 @@
                     const isDisabled = (field.name === 'med_alt' && isImage && altRequiredByDefault) ? 'data-decorative-target="true"' : '';
                     
                     if (field.type === 'textarea') {
-                        html += `<textarea id="${fieldId}" name="${field.name}" class="simple-modal-input" `;
-                        html += `data-field="${field.name}" rows="3" ${isRequired} ${isDisabled}>${fieldValue}</textarea>`;
+                        html += `<textarea id="${fieldId}" name="${fieldName}" class="simple-modal-input" `;
+                        html += `data-field="${fieldName}" rows="3" ${isRequired} ${isDisabled}>${fieldValue}</textarea>`;
                     } else {
-                        html += `<input type="text" id="${fieldId}" name="${field.name}" class="simple-modal-input" `;
-                        html += `data-field="${field.name}" value="${fieldValue}" ${isRequired} ${isDisabled}>`;
+                        html += `<input type="text" id="${fieldId}" name="${fieldName}" class="simple-modal-input" `;
+                        html += `data-field="${fieldName}" value="${fieldValue}" ${isRequired} ${isDisabled}>`;
                     }
                     
                     html += `</div>`;

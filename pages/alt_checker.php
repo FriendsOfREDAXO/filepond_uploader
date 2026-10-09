@@ -634,7 +634,7 @@ tr:hover .btn-save-row,
 }
 </style>
 
-<script nonce="' . rex_response::getNonce() . '">
+<script nonce="<?= rex_response::getNonce() ?>">
 $(document).on('rex:ready', function() {
     const AltChecker = {
         apiEndpoint: <?= json_encode($apiEndpoint) ?>,
@@ -688,7 +688,7 @@ $(document).on('rex:ready', function() {
             $(document).on('click', '.preview-toggle', (e) => {
                 const $toggle = $(e.currentTarget);
                 const filename = $toggle.data('filename');
-                const $previewRow = $(`.preview-row[data-filename="${this.escapeHtml(filename)}"]`);
+                const $previewRow = $(`.preview-row[data-filename="${CSS.escape(filename)}"]`);
                 
                 $toggle.toggleClass('open');
                 $previewRow.toggleClass('open');
@@ -699,7 +699,7 @@ $(document).on('rex:ready', function() {
                 e.stopPropagation();
                 const $toggle = $(e.currentTarget);
                 const filename = $toggle.data('filename');
-                const $langRow = $(`.lang-row[data-filename="${this.escapeHtml(filename)}"]`);
+                const $langRow = $(`.lang-row[data-filename="${CSS.escape(filename)}"]`);
                 
                 $toggle.toggleClass('active');
                 $langRow.toggleClass('open');
@@ -726,9 +726,9 @@ $(document).on('rex:ready', function() {
         },
         
         saveOne(filename) {
-            const $row = $(`tr.image-row[data-filename="${this.escapeHtml(filename)}"]`);
-            const $langRow = $(`.lang-row[data-filename="${this.escapeHtml(filename)}"]`);
-            const $previewRow = $(`.preview-row[data-filename="${this.escapeHtml(filename)}"]`);
+            const $row = $(`tr.image-row[data-filename="${CSS.escape(filename)}"]`);
+            const $langRow = $(`.lang-row[data-filename="${CSS.escape(filename)}"]`);
+            const $previewRow = $(`.preview-row[data-filename="${CSS.escape(filename)}"]`);
             
             // Alle Inputs sammeln (aus Hauptzeile und Sprach-Zeile)
             const $allInputs = $row.find('.alt-input').add($langRow.find('.alt-input'));
@@ -860,8 +860,8 @@ $(document).on('rex:ready', function() {
         },
         
         ignoreImage(filename) {
-            const $row = $(`tr.image-row[data-filename="${this.escapeHtml(filename)}"]`);
-            const $previewRow = $(`.preview-row[data-filename="${this.escapeHtml(filename)}"]`);
+            const $row = $(`tr.image-row[data-filename="${CSS.escape(filename)}"]`);
+            const $previewRow = $(`.preview-row[data-filename="${CSS.escape(filename)}"]`);
             const $input = $row.find('.alt-input');
             
             $row.addClass('saving');
@@ -1024,8 +1024,8 @@ $(document).on('rex:ready', function() {
         
         // AI: Alt-Text für einzelnes Bild generieren (alle Sprachen bei multilang)
         async aiGenerateSingle(filename) {
-            const $row = $(`tr.image-row[data-filename="${this.escapeHtml(filename)}"]`);
-            const $langRow = $(`.lang-row[data-filename="${this.escapeHtml(filename)}"]`);
+            const $row = $(`tr.image-row[data-filename="${CSS.escape(filename)}"]`);
+            const $langRow = $(`.lang-row[data-filename="${CSS.escape(filename)}"]`);
             const $btn = $row.find('.btn-ai-generate');
             const $allInputs = $row.find('.alt-input').add($langRow.find('.alt-input'));
             const languageCodes = this.getRequestedLanguagesForInputs($allInputs);
@@ -1069,10 +1069,6 @@ $(document).on('rex:ready', function() {
                 if (response.blocked_languages_used && response.fallback_language) {
                     this.showSkippedLanguageInfo(response.blocked_languages_used, response.fallback_language);
                 }
-
-                if (response.tokens) {
-                    this.showTokenInfo(response.tokens);
-                }
             } catch (e) {
                 alert('<?= $addon->i18n('alt_checker_ai_error') ?>: ' + e.message);
             } finally {
@@ -1102,8 +1098,8 @@ $(document).on('rex:ready', function() {
                 processed++;
                 $btn.html(`${this.spinnerMarkup} ${processed}/${total}`);
                 
-                const $row = $(`tr.image-row[data-filename="${this.escapeHtml(filename)}"]`);
-                const $langRow = $(`.lang-row[data-filename="${this.escapeHtml(filename)}"]`);
+                const $row = $(`tr.image-row[data-filename="${CSS.escape(filename)}"]`);
+                const $langRow = $(`.lang-row[data-filename="${CSS.escape(filename)}"]`);
                 // Alle Inputs: aus der Hauptzeile UND der Sprachzeile
                 const $allInputs = $row.find('.alt-input').add($langRow.find('.alt-input'));
 
@@ -1145,38 +1141,8 @@ $(document).on('rex:ready', function() {
         },
         
         escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         },
-        
-        // Token-Info anzeigen
-        showTokenInfo(tokens) {
-            // Bestehende Token-Anzeige entfernen
-            $('#ai-token-info').remove();
-            
-            // Neue Token-Anzeige erstellen
-            const html = `
-                <div id="ai-token-info" class="alert alert-info alert-dismissible" style="margin-top: 15px;">
-                    <button type="button" class="close" data-dismiss="alert">&times;</button>
-                    <i class="fa fa-info-circle"></i> 
-                    <strong><?= $addon->i18n('alt_checker_ai_tokens') ?>:</strong> 
-                    Prompt: ${tokens.prompt.toLocaleString()} | 
-                    Antwort: ${tokens.response.toLocaleString()} | 
-                    Gesamt: ${tokens.total.toLocaleString()}
-                </div>
-            `;
-            
-            $('#alt-checker-filter-form').after(html);
-            
-            // Nach 10 Sekunden ausblenden
-            setTimeout(() => {
-                $('#ai-token-info').fadeOut(500, function() {
-                    $(this).remove();
-                });
-            }, 10000);
-        }
     };
     
     AltChecker.init();

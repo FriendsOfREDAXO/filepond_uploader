@@ -121,7 +121,7 @@ $scripts = Helper::getScripts();
             value=""
             data-widget="filepond"
             data-filepond-cat="<?= rex_escape($categoryId) ?>"
-            <?= Helper::widgetSecurityAttributes((int) $categoryId) ?>
+            <?= Helper::widgetSecurityAttributes((int) $categoryId, $allowedTypes, (int) $maxFilesize) ?>
             data-filepond-maxfiles="<?= rex_escape($maxFiles) ?>"
             data-filepond-types="<?= rex_escape($allowedTypes) ?>"
             data-filepond-maxsize="<?= rex_escape($maxFilesize) ?>"
