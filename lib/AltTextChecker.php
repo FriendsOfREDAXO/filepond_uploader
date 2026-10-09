@@ -2,6 +2,8 @@
 
 namespace FriendsOfRedaxo\FilePondUploader;
 
+use rex;
+use Exception;
 use rex_addon;
 use rex_clang;
 use rex_config;

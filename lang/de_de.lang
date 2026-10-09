@@ -304,3 +304,20 @@ filepond_ycom_group_type = Gruppenfilter
 filepond_ycom_groups = Gruppen
 filepond_ycom_groups_note = Mehrfachauswahl: Strg/Cmd-Klick.
 filepond_ycom_auth_reset = Sitzungs-Defaults zurücksetzen
+
+# 3.0: Einstellungen als Unterseiten, KI über ai_platform
+filepond_settings_tab_upload = Upload
+filepond_settings_tab_images = Bilder
+filepond_settings_tab_metadata = Metadaten
+filepond_settings_tab_mediapool = Medienpool & Alt-Texte
+filepond_settings_tab_ai = KI
+filepond_settings_tab_system = System
+filepond_settings_alt_checker_list = Liste im Alt-Text-Checker
+filepond_settings_debug = Fehlersuche
+filepond_settings_ai_profile = ai_platform-Profil
+filepond_settings_ai_profile_notice = Profil vom Typ „Bildverständnis“ aus dem AddOn ai_platform. Anbieter, Modell und Zugangsdaten werden dort verwaltet.
+filepond_settings_ai_profile_default = Standardprofil von ai_platform
+filepond_settings_ai_platform_missing = Für die KI-Funktionen wird das AddOn <strong>ai_platform</strong> benötigt. Es ist nicht installiert oder nicht aktiviert.
+filepond_settings_ai_platform_no_profile = ai_platform enthält noch kein aktives Profil vom Typ „Bildverständnis“. <a href="{0}">Profil anlegen</a>
+filepond_ai_not_available = Kein ai_platform-Profil für Bildverständnis verfügbar.
+filepond_ai_profile_ready = KI bereit: Profil „{0}“ ({1})

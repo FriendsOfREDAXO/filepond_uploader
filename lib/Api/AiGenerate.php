@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use Exception;
 use rex_api_function;
 use rex_api_result;
 use rex_backend_login;

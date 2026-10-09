@@ -64,7 +64,6 @@ $altFieldExists = AltTextChecker::checkAltFieldExists();
 
 // AI-Status prüfen
 $aiEnabled = AltTextGenerator::isEnabled();
-$aiProvider = rex_config::get('filepond_uploader', 'ai_provider', 'gemini');
 
 // Mehrsprachigkeit prüfen
 $isMultiLang = AltTextChecker::isMultiLangField();

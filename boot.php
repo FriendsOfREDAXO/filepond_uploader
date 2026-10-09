@@ -212,7 +212,7 @@ if (rex::isBackend() && rex::getUser()) {
     rex_view::setJsProperty('filepond_ai', AutoMetainfo::getAiButtonConfig());
 
     // Settings-Seite: JS für Dateitypen-Auswahl
-    if ('filepond_uploader/settings' === rex_be_controller::getCurrentPage()) {
+    if ('filepond_uploader/settings/upload' === rex_be_controller::getCurrentPage()) {
         rex_view::addJsFile($this->getAssetsUrl('filepond_settings.js'));
     }
 

@@ -309,3 +309,20 @@ filepond_ycom_group_type = Group filter
 filepond_ycom_groups = Groups
 filepond_ycom_groups_note = Multi-select: Ctrl/Cmd + click.
 filepond_ycom_auth_reset = Reset session defaults
+
+# 3.0: settings as subpages, AI via ai_platform
+filepond_settings_tab_upload = Upload
+filepond_settings_tab_images = Images
+filepond_settings_tab_metadata = Metadata
+filepond_settings_tab_mediapool = Media pool & alt texts
+filepond_settings_tab_ai = AI
+filepond_settings_tab_system = System
+filepond_settings_alt_checker_list = Alt text checker list
+filepond_settings_debug = Debugging
+filepond_settings_ai_profile = ai_platform profile
+filepond_settings_ai_profile_notice = Profile of type "image understanding" from the ai_platform addon. Provider, model and credentials are managed there.
+filepond_settings_ai_profile_default = Default profile of ai_platform
+filepond_settings_ai_platform_missing = The AI features require the <strong>ai_platform</strong> addon. It is not installed or not activated.
+filepond_settings_ai_platform_no_profile = ai_platform has no active profile of type "image understanding" yet. <a href="{0}">Create profile</a>
+filepond_ai_not_available = No ai_platform profile for image understanding available.
+filepond_ai_profile_ready = AI ready: profile "{0}" ({1})

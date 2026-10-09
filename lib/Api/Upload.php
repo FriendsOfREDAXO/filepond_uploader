@@ -2,6 +2,8 @@
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use rex;
+use Exception;
 use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
 use finfo;
 use rex_api_exception;

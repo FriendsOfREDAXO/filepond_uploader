@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader;
 
+use rex;
 use rex_addon;
 use rex_view;
 

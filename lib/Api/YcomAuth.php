@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use rex;
 use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
 use rex_api_function;
 use rex_backend_login;

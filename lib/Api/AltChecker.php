@@ -2,6 +2,8 @@
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use rex;
+use Exception;
 use rex_api_function;
 use rex_api_result;
 use rex_response;
@@ -42,12 +44,6 @@ class AltChecker extends rex_api_function
                 break;
             case 'ai_generate':
                 $this->handleAiGenerate();
-                break;
-            case 'ai_bulk_generate':
-                $this->handleAiBulkGenerate();
-                break;
-            case 'ai_test':
-                $this->handleAiTest();
                 break;
             default:
                 $this->sendJson(['error' => 'Unbekannte Aktion']);
@@ -210,52 +206,6 @@ class AltChecker extends rex_api_function
         } else {
             $result = $generator->generateAltText($filename, $language);
         }
-
-        $this->sendJson($result);
-    }
-
-    /**
-     * AI Alt-Texte für mehrere Bilder generieren.
-     */
-    private function handleAiBulkGenerate(): void
-    {
-        if (!AltTextGenerator::isEnabled()) {
-            $this->sendJson(['error' => 'AI Alt-Text-Generierung ist nicht aktiviert oder API-Key fehlt']);
-        }
-
-        $filenamesRaw = rex_request('filenames', 'string', '');
-        $language = rex_request('language', 'string', 'de');
-
-        if ('' !== $filenamesRaw && '[' === $filenamesRaw[0]) {
-            $filenames = json_decode($filenamesRaw, true) ?? [];
-        } else {
-            $filenames = rex_request('filenames', 'array', []);
-        }
-
-        if ([] === $filenames) {
-            $this->sendJson(['error' => 'Keine Dateinamen angegeben']);
-        }
-
-        $generator = new AltTextGenerator();
-        $results = $generator->generateBulk($filenames, $language);
-
-        $this->sendJson([
-            'success' => true,
-            'results' => $results,
-        ]);
-    }
-
-    /**
-     * AI-Verbindung testen.
-     */
-    private function handleAiTest(): void
-    {
-        if (!AltTextGenerator::isAvailable()) {
-            $this->sendJson(['success' => false, 'message' => 'API-Key nicht konfiguriert']);
-        }
-
-        $generator = new AltTextGenerator();
-        $result = $generator->testConnection();
 
         $this->sendJson($result);
     }

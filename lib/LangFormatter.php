@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader;
 
+use Exception;
 use rex_clang;
 use rex_i18n;
 
