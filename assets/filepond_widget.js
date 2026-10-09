@@ -2036,19 +2036,15 @@
         initFilePond();
     };
 
-    // jQuery hat höchste Priorität, wenn vorhanden
-    if (typeof jQuery !== 'undefined') {
-        // Verwende .on() statt .one(), da rex:ready mehrfach feuern kann (z.B. PJAX)
-        // Die Prüfung in initFilePond verhindert Mehrfach-Initialisierung desselben Elements
-        jQuery(document).on('rex:ready', safeInitFilePond);
+    // Beim Laden der Seite; im Backend zusätzlich bei rex:ready (auch nach PJAX).
+    // Bereits initialisierte Elemente werden übersprungen.
+    if (document.readyState !== 'loading') {
+        safeInitFilePond();
     } else {
-        // Ansonsten einen normalen DOMContentLoaded-Listener verwenden
-        if (document.readyState !== 'loading') {
-            // DOM ist bereits geladen
-            safeInitFilePond();
-        } else {
-            document.addEventListener('DOMContentLoaded', safeInitFilePond);
-        }
+        document.addEventListener('DOMContentLoaded', safeInitFilePond);
+    }
+    if (typeof jQuery !== 'undefined') {
+        jQuery(document).on('rex:ready', safeInitFilePond);
     }
 
     // Event für manuelle Initialisierung

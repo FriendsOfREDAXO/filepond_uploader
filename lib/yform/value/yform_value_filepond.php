@@ -177,7 +177,8 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
             'files' => $files,
             'chunk_enabled' => $flag('chunk_enabled', Config::isEnabled('enable_chunks', true)),
             'chunk_size' => $number('chunk_size', Config::int('chunk_size', 5)) * 1024 * 1024,
-            'skip_meta' => $flag('skip_meta', false),
+            // "Metadaten-Dialog immer anzeigen" übersteuert skip_meta des Feldes
+            'skip_meta' => !Config::isEnabled('always_show_meta') && $flag('skip_meta', false),
             'delayed_upload' => $this->getElement('delayed_upload'),
             'alt_required' => $flag('alt_required', Config::isEnabled('alt_required_default', true)),
             'max_pixel' => $number('max_pixel', Config::int('client_max_pixel', Config::int('max_pixel', 2100))),
