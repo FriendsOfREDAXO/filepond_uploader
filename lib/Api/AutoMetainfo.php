@@ -1,12 +1,29 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader\Api;
+
+use rex_addon;
+use rex_api_function;
+use rex_api_result;
+use rex_backend_login;
+use rex_clang;
+use rex_config;
+use rex_i18n;
+use rex_logger;
+use rex_media;
+use rex_plugin;
+use rex_response;
+use rex_sql;
+use rex_sql_exception;
+use rex_ycom_auth;
+
 use FriendsOfRedaxo\MetaInfoLangFields\MetainfoLangHelper;
 
 /**
  * Automatische MetaInfo-Feld-Erkennung für FilePond
  * Pragmatischer Ansatz: Vollautomatische Erkennung aller relevanten Felder.
  */
-class rex_api_filepond_auto_metainfo extends rex_api_function
+class AutoMetainfo extends rex_api_function
 {
     protected $published = true;
 
@@ -32,7 +49,7 @@ class rex_api_filepond_auto_metainfo extends rex_api_function
     }
 
     /**
-     * Gleiche Pruefung wie rex_api_filepond_uploader::isAuthorized():
+     * Gleiche Pruefung wie Upload::isAuthorized():
      * Backend-User, API-Token oder YCom-User.
      */
     private function isAuthorized(): bool

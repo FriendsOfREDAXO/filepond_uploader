@@ -1,12 +1,21 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader;
+
+use rex_addon;
+use rex_clang;
+use rex_config;
+use rex_media;
+use rex_media_cache;
+use rex_sql;
+
 /**
  * Alt-Text-Checker - Findet Bilder ohne Alt-Text für Barrierefreiheit
  * Unterstützt auch mehrsprachige Metafelder (metainfo_lang_fields).
  *
  * @package filepond_uploader
  */
-class filepond_alt_text_checker
+class AltTextChecker
 {
     private static ?bool $altFieldExists = null;
 

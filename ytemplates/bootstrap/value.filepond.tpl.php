@@ -1,4 +1,6 @@
 <?php
+
+use FriendsOfRedaxo\FilePondUploader\Helper;
 /** @var rex_yform_value_filepond $this */
 
 $class       = $this->getElement('required') ? 'form-is-required ' : '';
@@ -104,9 +106,9 @@ $dataAiTargetField = '' !== $ai_target_field
     ? $ai_target_field
     : (is_string($cfgAiTargetFieldVal) && '' !== trim($cfgAiTargetFieldVal) ? trim($cfgAiTargetFieldVal) : 'med_alt');
 
-if (class_exists('filepond_helper')) {
-    echo filepond_helper::getStyles();
-    echo filepond_helper::getScripts();
+if (class_exists(Helper::class)) {
+    echo Helper::getStyles();
+    echo Helper::getScripts();
 }
 ?>
 <div class="<?= $class_group ?>" id="<?= $this->getHTMLId() ?>">

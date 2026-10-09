@@ -1,12 +1,25 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader\Api;
+
+use rex_api_function;
+use rex_api_result;
+use rex_backend_login;
+use rex_config;
+use rex_path;
+use rex_plugin;
+use rex_request;
+use rex_response;
+use rex_ycom_auth;
+use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
+
 /**
  * API Endpoint für AI Alt-Text Generierung.
  *
  * @package filepond_uploader
  */
 
-class rex_api_filepond_ai_generate extends rex_api_function
+class AiGenerate extends rex_api_function
 {
     protected $published = true;
 
@@ -149,7 +162,7 @@ class rex_api_filepond_ai_generate extends rex_api_function
         }
 
         // Prüfen ob AI aktiviert ist
-        if (!filepond_ai_alt_generator::isEnabled()) {
+        if (!AltTextGenerator::isEnabled()) {
             $this->sendJson(['success' => false, 'error' => 'AI generation is disabled'], rex_response::HTTP_FORBIDDEN);
         }
 
@@ -176,7 +189,7 @@ class rex_api_filepond_ai_generate extends rex_api_function
             }
         }
 
-        $generator = new filepond_ai_alt_generator();
+        $generator = new AltTextGenerator();
         // Erneutes Erzeugen fuer bereits befuellte Felder: Ergebnis-Cache ueberspringen.
         $generator->setForceRefresh(rex_request('regenerate', 'bool', false));
         $result = ['success' => false, 'error' => 'Unknown error'];

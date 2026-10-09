@@ -1,8 +1,34 @@
 <?php
 
-use FriendsOfRedaxo\FilePond\YcomAuthSettings;
+namespace FriendsOfRedaxo\FilePondUploader\Api;
 
-class rex_api_filepond_uploader extends rex_api_function
+use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
+use finfo;
+use rex_api_exception;
+use rex_api_function;
+use rex_api_result;
+use rex_backend_login;
+use rex_clang;
+use rex_config;
+use rex_dir;
+use rex_file;
+use rex_i18n;
+use rex_logger;
+use rex_media;
+use rex_media_cache;
+use rex_media_service;
+use rex_mediapool;
+use rex_path;
+use rex_plugin;
+use rex_request;
+use rex_response;
+use rex_sql;
+use rex_sql_exception;
+use rex_string;
+use rex_ycom_auth;
+use rex_yform_manager_table;
+
+class Upload extends rex_api_function
 {
     protected $published = true;
     protected string $chunksDir = '';

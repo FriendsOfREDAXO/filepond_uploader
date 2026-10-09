@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace FriendsOfRedaxo\FilePond;
+namespace FriendsOfRedaxo\FilePondUploader;
 
 use rex;
 use rex_config;

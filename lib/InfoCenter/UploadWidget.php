@@ -1,6 +1,6 @@
 <?php
 
-namespace KLXM\InfoCenter\Widgets;
+namespace FriendsOfRedaxo\FilePondUploader\InfoCenter;
 
 use KLXM\InfoCenter\AbstractWidget;
 use rex;
@@ -10,7 +10,12 @@ use rex_media_perm;
 
 use function sprintf;
 
-class FilePondUploadWidget extends AbstractWidget
+// info_center ist optional: ohne das AddOn fehlt die Basisklasse, die Klasse wird dann nicht definiert.
+if (!class_exists(AbstractWidget::class)) {
+    return;
+}
+
+class UploadWidget extends AbstractWidget
 {
     protected bool $supportsLazyLoading = false;
 

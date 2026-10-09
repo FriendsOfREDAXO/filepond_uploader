@@ -1,5 +1,5 @@
 /*!
- * FilePond 4.32.11
+ * FilePond 4.32.12
  * Licensed under MIT, https://opensource.org/licenses/MIT/
  * Please visit https://pqina.nl/filepond/ for details.
  */
@@ -3905,7 +3905,7 @@
         files: [[], Type.ARRAY],
 
         // show support by displaying credits
-        credits: [['https://pqina.nl/', 'Powered by PQINA'], Type.ARRAY],
+        credits: [['https://filepond.com', 'Powered by FilePond'], Type.ARRAY],
     };
 
     var getItemByQuery = function getItemByQuery(items, query) {

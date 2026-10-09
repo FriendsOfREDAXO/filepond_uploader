@@ -1,13 +1,52 @@
 <?php
 
+use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
+use FriendsOfRedaxo\FilePondUploader\AltTextChecker;
+use FriendsOfRedaxo\FilePondUploader\Api\AiGenerate;
+use FriendsOfRedaxo\FilePondUploader\Api\AltChecker;
+use FriendsOfRedaxo\FilePondUploader\Api\AutoMetainfo;
+use FriendsOfRedaxo\FilePondUploader\Api\Upload;
+use FriendsOfRedaxo\FilePondUploader\Api\YcomAuth;
+use FriendsOfRedaxo\FilePondUploader\Helper;
+use FriendsOfRedaxo\FilePondUploader\InfoCenter\UploadWidget;
+use FriendsOfRedaxo\FilePondUploader\LangFormatter;
+use FriendsOfRedaxo\FilePondUploader\MediaCleanup;
+use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
+
 /** @var rex_addon $this */
 
-use FriendsOfRedaxo\FilePond\FilePondMediaCleanup;
+// Klassennamen bis 2.x: weiter nutzbar, aufgelöst erst bei Bedarf.
+spl_autoload_register(static function (string $class): void {
+    $class = ltrim($class, '\\');
+    $alias = [
+        'filepond_helper' => Helper::class,
+        'filepond_lang_formatter' => LangFormatter::class,
+        'filepond_alt_text_checker' => AltTextChecker::class,
+        'filepond_ai_alt_generator' => AltTextGenerator::class,
+        'rex_api_filepond_uploader' => Upload::class,
+        'rex_api_filepond_ai_generate' => AiGenerate::class,
+        'rex_api_filepond_alt_checker' => AltChecker::class,
+        'rex_api_filepond_auto_metainfo' => AutoMetainfo::class,
+        'rex_api_filepond_ycom_auth' => YcomAuth::class,
+        'friendsofredaxo\\filepond\\filepondmediacleanup' => MediaCleanup::class,
+        'friendsofredaxo\\filepond\\ycomauthsettings' => YcomAuthSettings::class,
+        'klxm\\infocenter\\widgets\\fileponduploadwidget' => UploadWidget::class,
+    ][strtolower($class)] ?? null;
+    if (null !== $alias && class_exists($alias)) {
+        class_alias($alias, $class);
+    }
+});
+
+rex_api_function::register('filepond_uploader', Upload::class);
+rex_api_function::register('filepond_ai_generate', AiGenerate::class);
+rex_api_function::register('filepond_alt_checker', AltChecker::class);
+rex_api_function::register('filepond_auto_metainfo', AutoMetainfo::class);
+rex_api_function::register('filepond_ycom_auth', YcomAuth::class);
 
 rex_yform::addTemplatePath($this->getPath('ytemplates'));
 
 // MEDIA_IS_IN_USE Extension Point registrieren für bessere Kontrolle
-rex_extension::register('MEDIA_IS_IN_USE', [FilePondMediaCleanup::class, 'isMediaInUse']);
+rex_extension::register('MEDIA_IS_IN_USE', [MediaCleanup::class, 'isMediaInUse']);
 
 // MediaPlace-Upload-Anbieter (siehe UploadProviderRegistry/MP.registerUploadProvider()
 // im mediaplace-Addon): rein soft-optional, komplett wirkungslos ohne installiertes
@@ -163,14 +202,14 @@ if (rex::isBackend() && rex::getUser()) {
     static $filepondScriptsLoaded = false;
     
     if (!$filepondScriptsLoaded) {
-        filepond_helper::getStyles();
-        filepond_helper::getScripts();
+        Helper::getStyles();
+        Helper::getScripts();
         $filepondScriptsLoaded = true;
     }
 
     // KI-Button-Konfiguration fuer mediapool_ai.js direkt in die Seite (rex.filepond_ai),
     // statt sie auf jeder Backend-Seite per eigenem Request nachzuladen.
-    rex_view::setJsProperty('filepond_ai', rex_api_filepond_auto_metainfo::getAiButtonConfig());
+    rex_view::setJsProperty('filepond_ai', AutoMetainfo::getAiButtonConfig());
 
     // Settings-Seite: JS für Dateitypen-Auswahl
     if ('filepond_uploader/settings' === rex_be_controller::getCurrentPage()) {
@@ -185,8 +224,8 @@ if (rex::isBackend() && rex::getUser()) {
         'mediapool/filepond_multiupload',
     ], true);
     if ($isFilePondUploadPage
-        && \FriendsOfRedaxo\FilePond\YcomAuthSettings::isEnabled()
-        && \FriendsOfRedaxo\FilePond\YcomAuthSettings::userMayManage(rex::getUser())
+        && YcomAuthSettings::isEnabled()
+        && YcomAuthSettings::userMayManage(rex::getUser())
     ) {
         rex_view::addJsFile($this->getAssetsUrl('filepond_ycom_auth.js'));
     }
@@ -263,14 +302,13 @@ if (rex::isBackend() && rex::getUser()) {
 
 // Backend-Permission für YCom-Media-Auth-Defaults registrieren
 rex_perm::register(
-    \FriendsOfRedaxo\FilePond\YcomAuthSettings::PERM,
+    YcomAuthSettings::PERM,
     rex_i18n::msg('filepond_perm_ycom_media_auth')
 );
 
 // API-Endpoint zum Speichern der Session-Defaults explizit registrieren
 // (defensiv – sicherstellt, dass `?rex-api-call=filepond_ycom_auth` immer auflöst,
 // auch wenn der Autoload-Cache nach Neuinstallation noch nicht aktualisiert wurde).
-rex_api_function::register('filepond_ycom_auth', rex_api_filepond_ycom_auth::class);
 
 
 
@@ -443,7 +481,7 @@ if ($enableAltChecker === '|1|' || $enableAltChecker === '1') {
         }
         
         // Nur einbinden wenn med_alt Feld überhaupt vorhanden ist
-        if (!filepond_alt_text_checker::checkAltFieldExists()) {
+        if (!AltTextChecker::checkAltFieldExists()) {
             return;
         }
         
@@ -472,7 +510,7 @@ if (rex_addon::exists('info_center') && rex_addon::get('info_center')->isAvailab
         
         // Check if user has permission (only for logged-in users)
         if (rex::getUser()) {
-            $widget = new \KLXM\InfoCenter\Widgets\FilePondUploadWidget();
+            $widget = new UploadWidget();
             $widget->setPriority(0.5); // After TimeTracker (0), before Article (1)
             $infoCenter->registerWidget($widget);
         }

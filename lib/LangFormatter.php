@@ -1,9 +1,14 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader;
+
+use rex_clang;
+use rex_i18n;
+
 /**
  * Helper class for formatting multilingual MetaInfo fields.
  */
-class filepond_lang_formatter
+class LangFormatter
 {
     /**
      * Format multilingual field data for display.

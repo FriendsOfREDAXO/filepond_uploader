@@ -2,7 +2,13 @@
 
 declare(strict_types=1);
 
-use FriendsOfRedaxo\FilePond\YcomAuthSettings;
+namespace FriendsOfRedaxo\FilePondUploader\Api;
+
+use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
+use rex_api_function;
+use rex_backend_login;
+use rex_response;
+
 
 /**
  * API-Endpoint zum Speichern der YCom-Media-Auth-Defaults pro Backend-Session.
@@ -10,7 +16,7 @@ use FriendsOfRedaxo\FilePond\YcomAuthSettings;
  * Wird vom Upload-Formular aufgerufen, sobald ein berechtigter Backend-User
  * eines der drei Felder (Auth-Typ, Group-Typ, Gruppen) verändert.
  */
-class rex_api_filepond_ycom_auth extends rex_api_function
+class YcomAuth extends rex_api_function
 {
     protected $published = false;
 

@@ -1,5 +1,16 @@
 <?php
 
+namespace FriendsOfRedaxo\FilePondUploader\Ai;
+
+use Imagick;
+use Throwable;
+use finfo;
+use rex_config;
+use rex_dir;
+use rex_file;
+use rex_media;
+use rex_path;
+
 /**
  * AI Alt-Text Generator für REDAXO.
  *
@@ -8,7 +19,7 @@
  * @package filepond_uploader
  */
 
-class filepond_ai_alt_generator
+class AltTextGenerator
 {
     // Verfügbare Provider
     public const PROVIDERS = [

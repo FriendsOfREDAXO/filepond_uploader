@@ -1,4 +1,8 @@
 <?php
+
+use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
+use FriendsOfRedaxo\FilePondUploader\Api\AutoMetainfo;
+use FriendsOfRedaxo\FilePondUploader\Api\Upload;
 $addon = rex_addon::get('filepond_uploader');
 
 // allowed_types manuell speichern (wird per addRawField/Accordion statt addTextAreaField gerendert)
@@ -543,18 +547,18 @@ $form->addFieldset($addon->i18n('filepond_ai_settings'));
 // Detailseite" + "Zielfeld für AI-Vorschlag") gelten GLEICHERMASSEN fuer den
 // klassischen Medienpool UND fuer MediaPlace, falls installiert -- es gibt
 // keinen eigenen "MediaPlace aktivieren"-Schalter. MediaPlace erkennt sich
-// selbst rein automatisch (siehe rex_api_filepond_auto_metainfo::
+// selbst rein automatisch (siehe AutoMetainfo::
 // getMediaplaceOwnAltField()): hat MediaPlace dort "Eigene Metadaten" an UND
 // ein eigenes Feld vom Typ "ALT-Text" konfiguriert, wird DIESES Feld statt
 // des klassischen "Zielfeld für AI-Vorschlag" benutzt -- ohne dass das hier
 // irgendwo sichtbar waere. Dieser Block macht den tatsaechlich aktiven
 // Zustand explizit, statt ihn nur in der Doku zu erklaeren.
-if (class_exists('rex_api_filepond_auto_metainfo')) {
+if (class_exists(AutoMetainfo::class)) {
     $mediaplaceAvailable = rex_addon::exists('mediaplace') && rex_addon::get('mediaplace')->isAvailable();
     if (!$mediaplaceAvailable) {
         $statusText = $addon->i18n('filepond_settings_mediaplace_status_not_installed');
     } else {
-        $ownAlt = rex_api_filepond_auto_metainfo::getMediaplaceOwnAltField();
+        $ownAlt = AutoMetainfo::getMediaplaceOwnAltField();
         $statusText = $ownAlt['active']
             ? $addon->i18n('filepond_settings_mediaplace_status_active', rex_escape($ownAlt['key']))
             : $addon->i18n('filepond_settings_mediaplace_status_fallback');
@@ -600,7 +604,7 @@ $field = $form->addSelectField('ai_provider', null, [
 ]);
 $field->setLabel($addon->i18n('filepond_settings_ai_provider'));
 $select = $field->getSelect();
-foreach (filepond_ai_alt_generator::PROVIDERS as $providerId => $providerName) {
+foreach (AltTextGenerator::PROVIDERS as $providerId => $providerName) {
     $select->addOption($providerName, $providerId);
 }
 $field->setNotice($addon->i18n('filepond_settings_ai_provider_notice'));
@@ -767,7 +771,7 @@ $form->addRawField('<div class="col-sm-6">');
 // Speichern übernimmt ihn dann in die Konfiguration.
 // Liste kommt live von Google (GeminiModelCatalog), ohne API-Key die Standardliste.
 $geminiModels = \FriendsOfRedaxo\FilePond\GeminiModelCatalog::getModels();
-$geminiModel = filepond_ai_alt_generator::getGeminiModel();
+$geminiModel = AltTextGenerator::getGeminiModel();
 $field = $form->addSelectField('gemini_model', $geminiModel, [
     'class' => 'form-control selectpicker',
     'data-live-search' => 'true',
@@ -1046,7 +1050,7 @@ if (rex_post('regenerate_token', 'boolean')) {
 
 // AJAX-Aktion für Aufräumen temporärer Dateien
 if (rex_request('cleanup_temp', 'boolean') && rex::isBackend() && rex::getUser() instanceof rex_user && rex::getUser()->isAdmin()) {
-    $api = new rex_api_filepond_uploader();
+    $api = new Upload();
     try {
         $result = $api->handleCleanup();
         rex_response::cleanOutputBuffers();

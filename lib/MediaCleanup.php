@@ -1,6 +1,6 @@
 <?php
 
-namespace FriendsOfRedaxo\FilePond;
+namespace FriendsOfRedaxo\FilePondUploader;
 
 use rex;
 use rex_config;
@@ -16,7 +16,7 @@ use function sprintf;
  * Extension Point Handler für MEDIA_IS_IN_USE
  * Prüft ob Medien in YForm-Feldern vom Typ filepond verwendet werden.
  */
-class FilePondMediaCleanup
+class MediaCleanup
 {
     /**
      * Prüft ob ein Medium in YForm-Tabellen verwendet wird.

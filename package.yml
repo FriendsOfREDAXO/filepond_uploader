@@ -1,9 +1,9 @@
 package: filepond_uploader
-version: '2.11.0'
-author: 'KLXM Crossmedia GmbH'
-supportpage: https://github.com/KLXM/filepond_uploader
+version: '3.0.0'
+author: 'Friends Of REDAXO, KLXM Crossmedia GmbH (klxm.de), Thomas Skerbis'
+supportpage: https://github.com/FriendsOfREDAXO/filepond_uploader
 requires:
-    php: '>=8.1'
+    php: '>=8.4'
     redaxo: '^5.17.1'
     packages:
         yform: '>=4.0.0'

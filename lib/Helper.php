@@ -1,6 +1,11 @@
 <?php
 
-class filepond_helper
+namespace FriendsOfRedaxo\FilePondUploader;
+
+use rex_addon;
+use rex_view;
+
+class Helper
 {
     // Tracking variables for scripts and styles
     private static bool $scriptsIncluded = false;
