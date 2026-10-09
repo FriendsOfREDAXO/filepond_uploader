@@ -321,3 +321,4 @@ filepond_settings_ai_platform_missing = Für die KI-Funktionen wird das AddOn <s
 filepond_settings_ai_platform_no_profile = ai_platform enthält noch kein aktives Profil vom Typ „Bildverständnis“. <a href="{0}">Profil anlegen</a>
 filepond_ai_not_available = Kein ai_platform-Profil für Bildverständnis verfügbar.
 filepond_ai_profile_ready = KI bereit: Profil „{0}“ ({1})
+filepond_perm_mediaplace_upload = MediaPlace: Upload-Button und Drag&Drop durch den FilePond-Dialog ersetzen

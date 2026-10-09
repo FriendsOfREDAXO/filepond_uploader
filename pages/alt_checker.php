@@ -2,6 +2,7 @@
 
 use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
 use FriendsOfRedaxo\FilePondUploader\AltTextChecker;
+use FriendsOfRedaxo\FilePondUploader\Config;
 use FriendsOfRedaxo\FilePondUploader\Helper;
 /**
  * Alt-Text-Checker - Bilder ohne Alt-Text finden und bearbeiten
@@ -28,17 +29,6 @@ if ($itemsPerPage < 1) {
 
 $filterFilename = rex_request('filter_filename', 'string', '');
 $filterCategory = rex_request('filter_category', 'int', -1);
-
-// Debug: Zeige die aktuellen Parameter
-if (rex::isDebugMode()) {
-    dump([
-        'filterFilename' => $filterFilename,
-        'filterCategory' => $filterCategory,
-        'currentBackendPage' => rex_url::currentBackendPage(),
-        'REQUEST_URI' => $_SERVER['REQUEST_URI'] ?? 'unknown',
-        'GET_params' => $_GET
-    ]);
-}
 
 // Media Category Select für Filter - wie auf der Upload-Seite
 $selMediaFilter = new rex_media_category_select($checkPerm = true);
@@ -79,42 +69,8 @@ foreach (rex_clang::getAll() as $clang) {
 }
 $currentLangId = rex_clang::getCurrentId();
 
-$fallbackLangRaw = rex_config::get('filepond_uploader', 'ai_fallback_language', 'en');
-$fallbackLangCode = is_string($fallbackLangRaw) ? strtolower(substr(trim($fallbackLangRaw), 0, 2)) : 'en';
-if (1 !== preg_match('/^[a-z]{2}$/', $fallbackLangCode)) {
-    $fallbackLangCode = 'en';
-}
-
-$blockedRaw = rex_config::get('filepond_uploader', 'ai_blocked_languages', '');
-$blockedCodes = [];
-if (is_array($blockedRaw)) {
-    $parts = $blockedRaw;
-} elseif (is_string($blockedRaw)) {
-    if (str_contains($blockedRaw, '|')) {
-        $parts = array_values(array_filter(explode('|', $blockedRaw), static fn (string $v): bool => '' !== $v));
-    } else {
-        $parts = preg_split('/[\s,;]+/', strtolower($blockedRaw));
-    }
-} else {
-    $parts = [];
-}
-
-if (is_array($parts)) {
-    foreach ($parts as $part) {
-        if (!is_string($part)) {
-            continue;
-        }
-
-        $short = strtolower(substr(trim($part), 0, 2));
-        if (1 !== preg_match('/^[a-z]{2}$/', $short)) {
-            continue;
-        }
-
-        if (!in_array($short, $blockedCodes, true) && $short !== $fallbackLangCode) {
-            $blockedCodes[] = $short;
-        }
-    }
-}
+$fallbackLangCode = Config::aiFallbackLanguage();
+$blockedCodes = array_values(array_diff(Config::aiBlockedLanguages(), [$fallbackLangCode]));
 
 $languageCodeToName = [];
 foreach ($languages as $lang) {
@@ -314,7 +270,7 @@ $currentPage = rex_be_controller::getCurrentPage();
                         $imgCategoryId = is_numeric($rawCategoryId) ? (int) $rawCategoryId : 0;
                         $categoryName = 0 === $imgCategoryId 
                             ? rex_i18n::msg('pool_kats_no') 
-                            : (string) ($categories[$imgCategoryId] ?? '-');
+                            : (rex_media_category::get($imgCategoryId)?->getName() ?? '-');
                         
                         $isSvg = 'svg' === strtolower(pathinfo($imgFilename, PATHINFO_EXTENSION));
                         $thumbSrc = $isSvg 

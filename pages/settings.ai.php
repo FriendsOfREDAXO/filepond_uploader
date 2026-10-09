@@ -5,6 +5,7 @@
 use FriendsOfRedaxo\AiPlatform\Service;
 use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
 use FriendsOfRedaxo\FilePondUploader\Api\AutoMetainfo;
+use FriendsOfRedaxo\FilePondUploader\Config;
 
 $addon = rex_addon::get('filepond_uploader');
 $form = rex_config_form::factory('filepond_uploader');
@@ -131,33 +132,7 @@ $field->setAttribute('multiple', 'multiple');
 $field->setLabel($addon->i18n('filepond_settings_ai_blocked_languages'));
 $field->setNotice($addon->i18n('filepond_settings_ai_blocked_languages_notice'));
 
-$selectedBlockedLanguages = [];
-$blockedConfigRaw = rex_config::get('filepond_uploader', 'ai_blocked_languages', '');
-if (is_array($blockedConfigRaw)) {
-    $selectedBlockedLanguages = $blockedConfigRaw;
-} elseif (is_string($blockedConfigRaw)) {
-    if (str_contains($blockedConfigRaw, '|')) {
-        $selectedBlockedLanguages = array_values(array_filter(explode('|', $blockedConfigRaw), static fn (string $v): bool => '' !== $v));
-    } elseif ('' !== trim($blockedConfigRaw)) {
-        $parts = preg_split('/[\s,;]+/', $blockedConfigRaw);
-        if (is_array($parts)) {
-            $selectedBlockedLanguages = $parts;
-        }
-    }
-}
-
-$selectedBlockedLanguages = array_values(array_unique(array_filter(array_map(static function ($value): string {
-    if (!is_string($value)) {
-        return '';
-    }
-
-    $trimmed = trim($value);
-    if ('' === $trimmed) {
-        return '';
-    }
-
-    return strtolower(substr($trimmed, 0, 2));
-}, $selectedBlockedLanguages), static fn (string $v): bool => preg_match('/^[a-z]{2}$/', $v) === 1)));
+$selectedBlockedLanguages = Config::aiBlockedLanguages();
 
 $select = $field->getSelect();
 $seenLanguageCodes = [];

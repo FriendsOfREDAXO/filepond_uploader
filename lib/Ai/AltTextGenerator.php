@@ -4,6 +4,7 @@ namespace FriendsOfRedaxo\FilePondUploader\Ai;
 
 use Exception;
 use FriendsOfRedaxo\AiPlatform\Service;
+use FriendsOfRedaxo\FilePondUploader\Config;
 use rex_addon;
 use rex_i18n;
 use Imagick;
@@ -73,10 +74,7 @@ class AltTextGenerator
      */
     public static function isEnabled(): bool
     {
-        $enabledRaw = rex_config::get('filepond_uploader', 'enable_ai_alt', '0');
-        $enabled = in_array($enabledRaw, [1, '1', true, 'true', '|1|'], true);
-
-        return $enabled && self::isAvailable();
+        return Config::isEnabled('enable_ai_alt') && self::isAvailable();
     }
 
     /**
@@ -954,8 +952,7 @@ class AltTextGenerator
 
     private function isCacheEnabled(): bool
     {
-        $enabledRaw = rex_config::get('filepond_uploader', 'ai_result_cache_enabled', true);
-        return in_array($enabledRaw, [1, '1', true, 'true', '|1|'], true);
+        return Config::isEnabled('ai_result_cache_enabled', true);
     }
 
     private function getCacheTtlSeconds(): int
@@ -1063,22 +1060,7 @@ class AltTextGenerator
 
     private function getFallbackLanguageCode(): string
     {
-        $configured = rex_config::get('filepond_uploader', 'ai_fallback_language', 'en');
-        if (!is_string($configured)) {
-            return 'en';
-        }
-
-        $trimmed = trim($configured);
-        if ('' === $trimmed) {
-            return 'en';
-        }
-
-        $short = strtolower(substr($trimmed, 0, 2));
-        if (!preg_match('/^[a-z]{2}$/', $short)) {
-            return 'en';
-        }
-
-        return $short;
+        return Config::aiFallbackLanguage();
     }
 
     /**
@@ -1086,50 +1068,7 @@ class AltTextGenerator
      */
     private function getBlockedLanguageCodes(): array
     {
-        $configured = rex_config::get('filepond_uploader', 'ai_blocked_languages', '');
-        if (is_array($configured)) {
-            $parts = $configured;
-        } elseif (is_string($configured)) {
-            $trimmed = trim($configured);
-            if ('' === $trimmed) {
-                return [];
-            }
-
-            if (str_contains($trimmed, '|')) {
-                $parts = array_values(array_filter(explode('|', $trimmed), static fn (string $v): bool => '' !== $v));
-            } else {
-                $parts = preg_split('/[\s,;]+/', strtolower($trimmed));
-            }
-        } else {
-            return [];
-        }
-
-        if (!is_array($parts)) {
-            return [];
-        }
-
-        $normalized = [];
-        foreach ($parts as $part) {
-            if (!is_string($part) || '' === $part) {
-                continue;
-            }
-
-            $normalizedPart = strtolower(trim($part));
-            if ('' === $normalizedPart) {
-                continue;
-            }
-
-            $short = substr($normalizedPart, 0, 2);
-            if (!preg_match('/^[a-z]{2}$/', $short)) {
-                continue;
-            }
-
-            if (!in_array($short, $normalized, true)) {
-                $normalized[] = $short;
-            }
-        }
-
-        return $normalized;
+        return Config::aiBlockedLanguages();
     }
 
     /**

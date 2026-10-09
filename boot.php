@@ -7,9 +7,10 @@ use FriendsOfRedaxo\FilePondUploader\Api\AltChecker;
 use FriendsOfRedaxo\FilePondUploader\Api\AutoMetainfo;
 use FriendsOfRedaxo\FilePondUploader\Api\Upload;
 use FriendsOfRedaxo\FilePondUploader\Api\YcomAuth;
+use FriendsOfRedaxo\FilePondUploader\Config;
 use FriendsOfRedaxo\FilePondUploader\Helper;
-use FriendsOfRedaxo\FilePondUploader\LangFormatter;
 use FriendsOfRedaxo\FilePondUploader\MediaCleanup;
+use FriendsOfRedaxo\FilePondUploader\MimeTypes;
 use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
 
 /** @var rex_addon $this */
@@ -19,7 +20,6 @@ spl_autoload_register(static function (string $class): void {
     $class = ltrim($class, '\\');
     $alias = [
         'filepond_helper' => Helper::class,
-        'filepond_lang_formatter' => LangFormatter::class,
         'filepond_alt_text_checker' => AltTextChecker::class,
         'filepond_ai_alt_generator' => AltTextGenerator::class,
         'rex_api_filepond_uploader' => Upload::class,
@@ -46,16 +46,12 @@ rex_yform::addTemplatePath($this->getPath('ytemplates'));
 // MEDIA_IS_IN_USE Extension Point registrieren für bessere Kontrolle
 rex_extension::register('MEDIA_IS_IN_USE', [MediaCleanup::class, 'isMediaInUse']);
 
-// MediaPlace-Upload-Anbieter (siehe UploadProviderRegistry/MP.registerUploadProvider()
-// im mediaplace-Addon): rein soft-optional, komplett wirkungslos ohne installiertes
-// MediaPlace, da MEDIAPLACE_UPLOAD_PROVIDERS ausschliesslich von dessen eigenem Code
-// abgefragt wird. Label/Recht hier, die eigentliche Uebernahme passiert clientseitig
-// in assets/mediaplace_upload_provider.js. Registrierung bewusst erst in
-// PACKAGES_INCLUDED (nicht direkt hier auf oberster Ebene) -- gleiches Muster wie die
-// bestehende info_center-Integration weiter unten: stellt sicher, dass ALLE Addons
-// (auch mediaplace selbst, falls dessen boot.php spaeter als dieses hier laeuft)
-// bereits vollstaendig gebootet sind, bevor die Registrierung greift.
-rex_perm::register('filepond_uploader[mediaplace_upload]', 'MediaPlace-Upload-Anbieter: Upload-Button/Drag&Drop durch den FilePond-Dialog ersetzen');
+if (rex::isBackend()) {
+    rex_perm::register('filepond_uploader[mediaplace_upload]', rex_i18n::msg('filepond_perm_mediaplace_upload'));
+    rex_perm::register(YcomAuthSettings::PERM, rex_i18n::msg('filepond_perm_ycom_media_auth'));
+}
+
+// MediaPlace-Upload-Anbieter (MP.registerUploadProvider()); ohne MediaPlace wirkungslos.
 rex_extension::register('PACKAGES_INCLUDED', static function () {
     rex_extension::register('MEDIAPLACE_UPLOAD_PROVIDERS', static function (rex_extension_point $ep) {
         $providers = $ep->getSubject();
@@ -68,142 +64,14 @@ rex_extension::register('PACKAGES_INCLUDED', static function () {
     });
 });
 
-// Mediapool MIME-Types erweitern für Typen, die FilePond erlaubt aber der Mediapool nicht kennt
-if (rex_addon::get('mediapool')->isAvailable()) {
-    $filepondMimeMap = [
-        // Bilder
-        'image/jpeg' => ['ext' => 'jpg', 'alt' => ['image/pjpeg']],
-        'image/png' => ['ext' => 'png'],
-        'image/gif' => ['ext' => 'gif'],
-        'image/webp' => ['ext' => 'webp'],
-        'image/svg+xml' => ['ext' => 'svg'],
-        'image/tiff' => ['ext' => 'tiff'],
-        'image/bmp' => ['ext' => 'bmp'],
-        'image/heic' => ['ext' => 'heic'],
-        'image/avif' => ['ext' => 'avif'],
-        'image/x-icon' => ['ext' => 'ico', 'alt' => ['image/vnd.microsoft.icon']],
-
-        // Dokumente
-        'application/pdf' => ['ext' => 'pdf'],
-        'text/plain' => ['ext' => 'txt', 'alt' => ['application/octet-stream']],
-        'text/csv' => ['ext' => 'csv', 'alt' => ['text/plain', 'application/octet-stream']],
-        'text/calendar' => ['ext' => 'ics', 'alt' => ['text/plain', 'application/octet-stream']],
-        'text/x-vcalendar' => ['ext' => 'vcal', 'alt' => ['text/calendar', 'text/plain', 'application/octet-stream']],
-        'text/vcard' => ['ext' => 'vcf', 'alt' => ['text/x-vcard', 'text/plain', 'application/octet-stream']],
-        'text/markdown' => ['ext' => 'md', 'alt' => ['text/plain', 'application/octet-stream']],
-        'application/rtf' => ['ext' => 'rtf'],
-        'application/json' => ['ext' => 'json', 'alt' => ['text/plain']],
-        'text/xml' => ['ext' => 'xml', 'alt' => ['application/xml']],
-        'text/vtt' => ['ext' => 'vtt'],
-        'text/srt' => ['ext' => 'srt', 'alt' => ['text/plain']],
-
-        // Archive
-        'application/zip' => ['ext' => 'zip', 'alt' => ['application/x-zip-compressed']],
-        'application/x-gzip' => ['ext' => 'gz', 'alt' => ['application/gzip']],
-        'application/x-tar' => ['ext' => 'tar'],
-        'application/x-rar-compressed' => ['ext' => 'rar', 'alt' => ['application/vnd.rar']],
-        'application/x-7z-compressed' => ['ext' => '7z'],
-
-        // Video
-        'video/mp4' => ['ext' => 'mp4'],
-        'video/mpeg' => ['ext' => 'mpeg'],
-        'video/quicktime' => ['ext' => 'mov'],
-        'video/webm' => ['ext' => 'webm'],
-        'video/ogg' => ['ext' => 'ogv'],
-        'video/x-msvideo' => ['ext' => 'avi'],
-        'video/x-matroska' => ['ext' => 'mkv'],
-
-        // Audio
-        'audio/mpeg' => ['ext' => 'mp3'],
-        'audio/wav' => ['ext' => 'wav', 'alt' => ['audio/x-wav']],
-        'audio/ogg' => ['ext' => 'ogg'],
-        'audio/aac' => ['ext' => 'aac'],
-        'audio/midi' => ['ext' => 'midi', 'alt' => ['audio/x-midi']],
-        'audio/flac' => ['ext' => 'flac'],
-        'audio/mp4' => ['ext' => 'm4a'],
-        'audio/webm' => ['ext' => 'weba'],
-
-        // Office (Modern)
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => ['ext' => 'docx', 'alt' => ['application/octet-stream', 'application/encrypted']],
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => ['ext' => 'xlsx', 'alt' => ['application/octet-stream', 'application/encrypted']],
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation' => ['ext' => 'pptx'],
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.template' => ['ext' => 'dotx', 'alt' => ['application/octet-stream']],
-        'application/vnd.openxmlformats-officedocument.presentationml.template' => ['ext' => 'potx'],
-        'application/vnd.openxmlformats-officedocument.presentationml.slideshow' => ['ext' => 'ppsx'],
-
-        // Office (Legacy)
-        'application/msword' => ['ext' => 'doc', 'alt' => ['application/octet-stream', 'application/encrypted']],
-        'application/vnd.ms-excel' => ['ext' => 'xls', 'alt' => ['application/octet-stream', 'application/encrypted']],
-        'application/vnd.ms-powerpoint' => ['ext' => 'ppt'],
-
-        // OpenDocument
-        'application/vnd.oasis.opendocument.text' => ['ext' => 'odt'],
-        'application/vnd.oasis.opendocument.spreadsheet' => ['ext' => 'ods'],
-        'application/vnd.oasis.opendocument.presentation' => ['ext' => 'odp'],
-
-        // Fonts
-        'font/woff' => ['ext' => 'woff', 'alt' => ['application/font-woff']],
-        'font/woff2' => ['ext' => 'woff2'],
-        'font/ttf' => ['ext' => 'ttf', 'alt' => ['application/x-font-ttf']],
-        'font/otf' => ['ext' => 'otf', 'alt' => ['application/x-font-opentype']],
-
-        // Sonstige
-        'application/postscript' => ['ext' => 'eps'],
-        'application/epub+zip' => ['ext' => 'epub'],
-    ];
-
-    $allowedTypes = rex_config::get('filepond_uploader', 'allowed_types', '');
-    if ('' !== $allowedTypes) {
-        // FilePond nutzt Komma-getrennte MIME-Types, kann aber auch Wildcards (image/*) und Endungen (.pdf) enthalten
-        $configuredTypes = array_map('trim', explode(',', $allowedTypes));
-        $mediapoolMimes = rex_addon::get('mediapool')->getProperty('allowed_mime_types', []);
-        $changed = false;
-
-        foreach ($configuredTypes as $type) {
-            // Wildcard-Typen wie "image/*" oder "video/*" auflösen
-            if (str_contains($type, '/*')) {
-                $prefix = explode('/*', $type)[0] . '/';
-                foreach ($filepondMimeMap as $mime => $info) {
-                    if (str_starts_with($mime, $prefix) && !isset($mediapoolMimes[$info['ext']])) {
-                        $mediapoolMimes[$info['ext']] = array_merge([$mime], $info['alt'] ?? []);
-                        $changed = true;
-                    }
-                }
-            } elseif (isset($filepondMimeMap[$type])) {
-                // Exakter MIME-Type
-                $ext = $filepondMimeMap[$type]['ext'];
-                if (!isset($mediapoolMimes[$ext])) {
-                    $mediapoolMimes[$ext] = array_merge([$type], $filepondMimeMap[$type]['alt'] ?? []);
-                    $changed = true;
-                }
-            } elseif (str_starts_with($type, '.')) {
-                // Dateiendung wie ".pdf", ".docx" – passenden MIME-Type finden
-                $extLookup = ltrim($type, '.');
-                foreach ($filepondMimeMap as $mime => $info) {
-                    if ($info['ext'] === $extLookup && !isset($mediapoolMimes[$extLookup])) {
-                        $mediapoolMimes[$extLookup] = array_merge([$mime], $info['alt'] ?? []);
-                        $changed = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if ($changed) {
-            rex_addon::get('mediapool')->setProperty('allowed_mime_types', $mediapoolMimes);
-        }
-    }
+// Medienpool-MIME-Types um die in FilePond erlaubten Typen erweitern (nur wo hochgeladen wird)
+if (rex_addon::get('mediapool')->isAvailable() && (rex::isBackend() || '' !== rex_request('rex-api-call', 'string', ''))) {
+    MimeTypes::extendMediapool(Config::string('allowed_types'));
 }
 
 if (rex::isBackend() && rex::getUser()) {
-    // Einbindung über Static-Properties sicherstellen
-    static $filepondScriptsLoaded = false;
-    
-    if (!$filepondScriptsLoaded) {
-        Helper::getStyles();
-        Helper::getScripts();
-        $filepondScriptsLoaded = true;
-    }
+    Helper::getStyles();
+    Helper::getScripts();
 
     // KI-Button-Konfiguration fuer mediapool_ai.js direkt in die Seite (rex.filepond_ai),
     // statt sie auf jeder Backend-Seite per eigenem Request nachzuladen.
@@ -229,61 +97,39 @@ if (rex::isBackend() && rex::getUser()) {
         rex_view::addJsFile($this->getAssetsUrl('filepond_ycom_auth.js'));
     }
 
-    // Verstecktes, dauerhaftes FilePond-Widget fuer den MediaPlace-Upload-
-    // Anbieter (siehe assets/mediaplace_upload_provider.js): auf JEDER
-    // Backend-Seite vorhanden (initFilePond()'s eigener rex:ready/
-    // DOMContentLoaded-Scan initialisiert es wie jedes andere data-widget=
-    // "filepond"-Element automatisch, kein manuelles filepond:init noetig),
-    // damit die FilePond-Instanz beim Klick auf MediaPlace's Upload-Button/
-    // Drag&Drop bereits bereitsteht -- data-filepond-cat wird dort erst zur
-    // Laufzeit passend zur MediaPlace-Zielkategorie gesetzt (siehe
-    // pages/upload.php fuer dasselbe Attribut-Set als Vorbild). Rein
-    // clientseitig unsichtbar (Wrapper-Div traegt display:none inline,
-    // siehe $inject unten), damit auf Seiten ohne MediaPlace-Nutzung kein
-    // leeres FilePond-Panel auftaucht.
+    // Verstecktes FilePond-Widget für den MediaPlace-Upload-Anbieter: nur mit MediaPlace und Recht
+    $user = rex::getUser();
+    if (rex_addon::get('mediaplace')->isAvailable() && ($user->isAdmin() || $user->hasPerm('filepond_uploader[mediaplace_upload]'))) {
+    rex_view::addJsFile($this->getAssetsUrl('mediaplace_upload_provider.js'));
     rex_extension::register('OUTPUT_FILTER', static function (rex_extension_point $ep): void {
         $subject = $ep->getSubject();
         if (!is_string($subject)) {
             return;
         }
 
-        $cfgAllowedTypes = rex_config::get('filepond_uploader', 'allowed_types', 'image/*,video/*,.pdf,.doc,.docx,.txt');
-        $dataAllowedTypes = is_string($cfgAllowedTypes) ? $cfgAllowedTypes : 'image/*,video/*,.pdf,.doc,.docx,.txt';
-        $cfgMaxFilesize = rex_config::get('filepond_uploader', 'max_filesize', 10);
-        $dataMaxFilesize = is_numeric($cfgMaxFilesize) ? (string) (int) $cfgMaxFilesize : '10';
-        $cfgClientMaxPixel = rex_config::get('filepond_uploader', 'client_max_pixel', '');
-        $cfgMaxPixel = rex_config::get('filepond_uploader', 'max_pixel', 2100);
-        $dataMaxPixel = is_scalar($cfgClientMaxPixel) && '' !== $cfgClientMaxPixel ? (string) $cfgClientMaxPixel : (is_numeric($cfgMaxPixel) ? (string) (int) $cfgMaxPixel : '2100');
-        $cfgClientQuality = rex_config::get('filepond_uploader', 'client_image_quality', '');
-        $cfgQuality = rex_config::get('filepond_uploader', 'image_quality', 90);
-        $dataQuality = is_scalar($cfgClientQuality) && '' !== $cfgClientQuality ? (string) $cfgClientQuality : (is_numeric($cfgQuality) ? (string) (int) $cfgQuality : '90');
-        $cfgCreateThumbnails = rex_config::get('filepond_uploader', 'create_thumbnails', '');
-        $dataClientResize = (is_string($cfgCreateThumbnails) && '|1|' === $cfgCreateThumbnails) ? 'true' : 'false';
-        $isEnabledConfig = static function (string $key, bool $default): bool {
-            $raw = rex_config::get('filepond_uploader', $key, $default ? '1' : '0');
-
-            return in_array($raw, [1, '1', true, 'true', '|1|'], true);
-        };
-        $titleRequired = $isEnabledConfig('title_required_default', false);
-        $altRequired = $isEnabledConfig('alt_required_default', true);
         $currentUser = rex::getUser();
         $langCode = $currentUser ? $currentUser->getLanguage() : 'en_gb';
+        $maxPixel = Config::int('client_max_pixel', 0) > 0 ? Config::int('client_max_pixel', 0) : Config::int('max_pixel', 2100);
+        $quality = Config::int('client_image_quality', 0) > 0 ? Config::int('client_image_quality', 0) : Config::int('image_quality', 90);
 
         $inject = '<div id="filepond-mp3-upload-provider-wrap" style="display:none">'
             . '<input type="file" multiple'
             . ' id="filepond-mp3-upload-provider"'
             . ' data-widget="filepond"'
             . ' data-filepond-cat="0"'
-            . ' data-filepond-types="' . rex_escape($dataAllowedTypes) . '"'
-            . ' data-filepond-maxsize="' . rex_escape($dataMaxFilesize) . '"'
+            . ' data-filepond-types="' . rex_escape(Config::string('allowed_types', 'image/*,video/*,application/pdf')) . '"'
+            . ' data-filepond-maxsize="' . Config::int('max_filesize', 200) . '"'
             . ' data-filepond-lang="' . rex_escape($langCode) . '"'
             . ' data-filepond-skip-meta="false"'
             . ' data-filepond-delayed-upload="false"'
-            . ' data-filepond-title-required="' . ($titleRequired ? 'true' : 'false') . '"'
-            . ' data-filepond-alt-required="' . ($altRequired ? 'true' : 'false') . '"'
-            . ' data-filepond-max-pixel="' . rex_escape($dataMaxPixel) . '"'
-            . ' data-filepond-image-quality="' . rex_escape($dataQuality) . '"'
-            . ' data-filepond-client-resize="' . $dataClientResize . '"'
+            . ' data-filepond-chunk-enabled="' . (Config::isEnabled('enable_chunks', true) ? 'true' : 'false') . '"'
+            . ' data-filepond-chunk-size="' . (Config::int('chunk_size', 5) * 1024 * 1024) . '"'
+            . ' data-filepond-title-required="' . (Config::isEnabled('title_required_default') ? 'true' : 'false') . '"'
+            . ' data-filepond-alt-required="' . (Config::isEnabled('alt_required_default', true) ? 'true' : 'false') . '"'
+            . ' data-filepond-max-pixel="' . $maxPixel . '"'
+            . ' data-filepond-image-quality="' . $quality . '"'
+            . ' data-filepond-client-resize="' . (Config::isEnabled('create_thumbnails', true) ? 'true' : 'false') . '"'
+            . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"'
             . ' />'
             . '</div>';
 
@@ -297,22 +143,10 @@ if (rex::isBackend() && rex::getUser()) {
 
         $ep->setSubject($subject);
     });
+    }
 }
 
-// Backend-Permission für YCom-Media-Auth-Defaults registrieren
-rex_perm::register(
-    YcomAuthSettings::PERM,
-    rex_i18n::msg('filepond_perm_ycom_media_auth')
-);
-
-// API-Endpoint zum Speichern der Session-Defaults explizit registrieren
-// (defensiv – sicherstellt, dass `?rex-api-call=filepond_ycom_auth` immer auflöst,
-// auch wenn der Autoload-Cache nach Neuinstallation noch nicht aktualisiert wurde).
-
-
-
-if(rex_config::get('filepond_uploader', 'replace_mediapool', false))
-{    
+if (Config::isEnabled('replace_mediapool')) {
     rex_extension::register('PAGES_PREPARED', function (rex_extension_point $ep) {
         /** @var array<string, rex_be_page> $pages */
         $pages = $ep->getSubject();
@@ -329,7 +163,7 @@ if(rex_config::get('filepond_uploader', 'replace_mediapool', false))
     });
 }
 
-if (rex::isBackend() && rex::getUser() && rex_config::get('filepond_uploader', 'enable_mediapool_replace', true)) {
+if (rex::isBackend() && rex::getUser() && Config::isEnabled('enable_mediapool_replace', true)) {
     $addon = $this;
 
     rex_extension::register('MEDIA_DETAIL_SIDEBAR', static function (rex_extension_point $ep) use ($addon) {
@@ -384,14 +218,15 @@ if (rex::isBackend() && rex::getUser() && rex_config::get('filepond_uploader', '
             . ' data-filepond-cat="' . (int) $media->getCategoryId() . '"'
             . ' data-filepond-maxfiles="1"'
             . ' data-filepond-types="' . rex_escape($allowedTypes) . '"'
-            . ' data-filepond-maxsize="' . (int) rex_config::get('filepond_uploader', 'max_filesize', 200) . '"'
+            . ' data-filepond-maxsize="' . Config::int('max_filesize', 200) . '"'
             . ' data-filepond-lang="' . rex_escape((string) rex::getUser()?->getLanguage()) . '"'
             . ' data-filepond-skip-meta="true"'
             . ' data-filepond-delayed-upload="false"'
             . ' data-filepond-title-required="false"'
             . ' data-filepond-alt-required="false"'
-            . ' data-filepond-chunk-enabled="' . (rex_config::get('filepond_uploader', 'enable_chunks', true) ? 'true' : 'false') . '"'
-            . ' data-filepond-chunk-size="' . ((int) rex_config::get('filepond_uploader', 'chunk_size', 5) * 1024 * 1024) . '"'
+            . ' data-filepond-chunk-enabled="' . (Config::isEnabled('enable_chunks', true) ? 'true' : 'false') . '"'
+            . ' data-filepond-chunk-size="' . (Config::int('chunk_size', 5) * 1024 * 1024) . '"'
+            . ' data-filepond-media-url="' . rex_escape(rex_url::media()) . '"'
             . ' data-filepond-replace-file-id="' . $fileId . '"'
             . ' data-filepond-reload-on-success="true"'
             . ' data-filepond-redirect-url="' . rex_escape($redirectUrl) . '"'
@@ -429,8 +264,7 @@ if (rex::isBackend() && rex::getUser() && rex_config::get('filepond_uploader', '
 }
 
 // Multiupload als Medienpool-Unterseite registrieren
-$mediapoolSubpage = rex_config::get('filepond_uploader', 'mediapool_subpage', '');
-if ($mediapoolSubpage === '|1|' || $mediapoolSubpage === '1') {
+if (rex::isBackend() && Config::isEnabled('mediapool_subpage')) {
     rex_extension::register('PAGES_PREPARED', function (rex_extension_point $ep) {
         $user = rex::getUser();
         if (!$user) {
@@ -468,11 +302,13 @@ if ($mediapoolSubpage === '|1|' || $mediapoolSubpage === '1') {
 }
 
 // Alt-Text-Checker als Medienpool-Unterseite registrieren
-$enableAltChecker = rex_config::get('filepond_uploader', 'enable_alt_checker', '');
-if ($enableAltChecker === '|1|' || $enableAltChecker === '1') {
+if (rex::isBackend() && Config::isEnabled('enable_alt_checker', true)) {
     rex_extension::register('PAGES_PREPARED', function (rex_extension_point $ep) {
         $user = rex::getUser();
-        if (!$user) return;
+        // Unterseite nur im Medienpool nötig; spart den Spaltencheck auf allen anderen Seiten
+        if (!$user || 'mediapool' !== rex_be_controller::getCurrentPagePart(1)) {
+            return;
+        }
         
         // Nur für Admins oder Nutzer mit entsprechender Berechtigung
         if (!$user->isAdmin() && !$user->hasPerm('filepond_uploader[alt_checker]')) {

@@ -2,6 +2,7 @@
 
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
+use FriendsOfRedaxo\FilePondUploader\Config;
 use Throwable;
 use rex;
 use Exception;
@@ -129,20 +130,13 @@ class AutoMetainfo extends rex_api_function
      */
     public static function getAiButtonConfig(): array
     {
-        $isEnabled = static function (string $key, bool $default): bool {
-            $raw = rex_config::get('filepond_uploader', $key, $default ? '1' : '0');
-
-            return in_array($raw, [1, '1', true, 'true', '|1|'], true);
-        };
-        $globalEnabled = $isEnabled('enable_ai_alt', false);
-        $mediapoolEnabled = $isEnabled('enable_ai_mediapool_detail', true);
-        $enabled = $globalEnabled && $mediapoolEnabled;
-        $targetFieldRaw = rex_config::get('filepond_uploader', 'ai_target_field', 'med_alt');
-        $targetField = is_string($targetFieldRaw) ? trim($targetFieldRaw) : 'med_alt';
-        if ('' === $targetField) {
-            $targetField = 'med_alt';
+        // KI aus: nichts berechnen (wird auf jeder Backend-Seite abgefragt)
+        if (!Config::isEnabled('enable_ai_alt') || !Config::isEnabled('enable_ai_mediapool_detail', true)) {
+            return ['enabled' => false, 'target_field' => 'med_alt', 'languages' => [], 'fallback_language' => 'en', 'blocked_languages' => [], 'mediaplace_own_alt_active' => false, 'mediaplace_own_alt_key' => 'alt'];
         }
 
+        $enabled = true;
+        $targetField = Config::string('ai_target_field', 'med_alt');
         // Nur sichere Feldnamen zulassen
         if (1 !== preg_match('/^[a-zA-Z0-9_]+$/', $targetField)) {
             $targetField = 'med_alt';
@@ -154,42 +148,8 @@ class AutoMetainfo extends rex_api_function
             $languages[(string) $clang->getId()] = $clang->getCode();
         }
 
-        $fallbackLanguageRaw = rex_config::get('filepond_uploader', 'ai_fallback_language', 'en');
-        $fallbackLanguage = is_string($fallbackLanguageRaw) ? strtolower(substr(trim($fallbackLanguageRaw), 0, 2)) : 'en';
-        if (1 !== preg_match('/^[a-z]{2}$/', $fallbackLanguage)) {
-            $fallbackLanguage = 'en';
-        }
-
-        $blockedRaw = rex_config::get('filepond_uploader', 'ai_blocked_languages', '');
-        $blockedLanguages = [];
-        if (is_array($blockedRaw)) {
-            $parts = $blockedRaw;
-        } elseif (is_string($blockedRaw)) {
-            if (str_contains($blockedRaw, '|')) {
-                $parts = array_values(array_filter(explode('|', $blockedRaw), static fn (string $v): bool => '' !== $v));
-            } else {
-                $parts = preg_split('/[\s,;]+/', strtolower($blockedRaw));
-            }
-        } else {
-            $parts = [];
-        }
-
-        if (is_array($parts)) {
-            foreach ($parts as $part) {
-                if (!is_string($part)) {
-                    continue;
-                }
-
-                $short = strtolower(substr(trim($part), 0, 2));
-                if (1 !== preg_match('/^[a-z]{2}$/', $short)) {
-                    continue;
-                }
-
-                if (!in_array($short, $blockedLanguages, true) && $short !== $fallbackLanguage) {
-                    $blockedLanguages[] = $short;
-                }
-            }
-        }
+        $fallbackLanguage = Config::aiFallbackLanguage();
+        $blockedLanguages = array_values(array_diff(Config::aiBlockedLanguages(), [$fallbackLanguage]));
 
         $mediaplaceOwnAlt = self::getMediaplaceOwnAltField();
 

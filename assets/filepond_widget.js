@@ -1,6 +1,11 @@
 (function() {
-    // Tracking für bereits initialisierte Elemente
-    const initializedElements = new Set();
+    // Asset-Basis aus der eigenen Script-URL (funktioniert auch mit Unterverzeichnis-Installationen)
+    const assetsBase = (document.currentScript && document.currentScript.src)
+        ? document.currentScript.src.replace(/[^/?#]*(\?.*)?$/, '')
+        : '/assets/addons/filepond_uploader/';
+
+    // Tracking für bereits initialisierte Elemente (WeakSet: entfernte Knoten werden freigegeben)
+    const initializedElements = new WeakSet();
     
     // Globale Variable für den aktuellen Dateityp
     let currentFileType = null;
