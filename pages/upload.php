@@ -227,229 +227,9 @@ $content = '
     </form>
 </div>
 ';?>
-<script>
+<script nonce="<?= rex_response::getNonce() ?>">
 $(document).on("rex:ready", function() {
     
-    // Media Widget Integration
-    const openerInputField = "<?php echo rex_escape($openerInputField); ?>";
-    const isMediaWidget = openerInputField.length > 0;
-    
-    if (isMediaWidget) {
-        console.log("Media Widget Mode detected for:", openerInputField);
-        
-        // Container für Upload-Ergebnisse erstellen
-        const createResultsContainer = () => {
-            let container = document.getElementById('filepond-media-results');
-            if (!container) {
-                container = document.createElement('div');
-                container.id = 'filepond-media-results';
-                container.className = 'panel panel-info';
-                container.style.marginTop = '20px';
-                container.innerHTML = `
-                    <div class="panel-heading">
-                        <h4 class="panel-title">
-                            <i class="fa fa-check-circle text-success"></i> 
-                            ${openerInputField.startsWith('REX_MEDIALIST_') ? 
-                                '<?php echo rex_i18n::msg('filepond_uploaded_files_medialist'); ?>' : 
-                                '<?php echo rex_i18n::msg('filepond_uploaded_files_media'); ?>'}
-                        </h4>
-                    </div>
-                    <div class="panel-body">
-                        <ul id="filepond-uploaded-files" class="list-unstyled"></ul>
-                    </div>
-                `;
-                
-                // Nach dem Upload-Widget einfügen
-                const uploadWidget = document.querySelector('.panel-default');
-                if (uploadWidget && uploadWidget.parentNode) {
-                    uploadWidget.parentNode.insertBefore(container, uploadWidget.nextSibling);
-                }
-            }
-            return container;
-        };
-        
-        // Erfolgreichen Upload behandeln
-        const handleSuccessfulUpload = (filename) => {
-            console.log("File uploaded successfully:", filename);
-            
-            const container = createResultsContainer();
-            const filesList = document.getElementById('filepond-uploaded-files');
-            
-            if (filesList) {
-                const listItem = document.createElement('li');
-                listItem.className = 'media-upload-result fp-media-upload-result';
-                
-                const isMediaList = openerInputField.startsWith('REX_MEDIALIST_');
-                const buttonText = isMediaList ? 
-                    '<?php echo rex_i18n::msg('filepond_select_for_medialist'); ?>' :
-                    '<?php echo rex_i18n::msg('filepond_select_for_media'); ?>';
-                
-                // Build DOM tree safely to avoid XSS
-                const rowDiv = document.createElement('div');
-                rowDiv.className = 'row';
-                
-                const colLeft = document.createElement('div');
-                colLeft.className = 'col-sm-6';
-                
-                const strongEl = document.createElement('strong');
-                const iconEl = document.createElement('i');
-                iconEl.className = 'fa fa-file';
-                strongEl.appendChild(iconEl);
-                strongEl.appendChild(document.createTextNode(' ' + filename));
-                colLeft.appendChild(strongEl);
-                colLeft.appendChild(document.createElement('br'));
-                const smallEl = document.createElement('small');
-                smallEl.className = 'text-muted';
-                smallEl.textContent = 'Erfolgreich hochgeladen';
-                colLeft.appendChild(smallEl);
-                
-                const colRight = document.createElement('div');
-                colRight.className = 'col-sm-6 text-right';
-                
-                const buttonEl = document.createElement('button');
-                buttonEl.type = 'button';
-                buttonEl.className = 'btn btn-success btn-sm filepond-select-media';
-                buttonEl.setAttribute('data-filename', filename);
-                buttonEl.setAttribute('data-is-medialist', isMediaList);
-                const buttonIcon = document.createElement('i');
-                buttonIcon.className = 'fa fa-check';
-                buttonEl.appendChild(buttonIcon);
-                buttonEl.appendChild(document.createTextNode(' ' + buttonText));
-                colRight.appendChild(buttonEl);
-                
-                rowDiv.appendChild(colLeft);
-                rowDiv.appendChild(colRight);
-                
-                listItem.appendChild(rowDiv);
-                
-                filesList.appendChild(listItem);
-                
-                // Button-Handler hinzufügen
-                const selectButton = listItem.querySelector('.filepond-select-media');
-                selectButton.addEventListener('click', function() {
-                    const filename = this.getAttribute('data-filename');
-                    const isMediaList = this.getAttribute('data-is-medialist') === 'true';
-                    
-                    if (isMediaList) {
-                        selectMedialist(filename);
-                    } else {
-                        selectMedia(filename, '');
-                    }
-                });
-            }
-        };
-        
-        // Media Widget Funktionen
-        const selectMedia = (filename, alt) => {
-            if (!window.opener) {
-                alert('Fehler: Übergeordnetes Fenster nicht gefunden');
-                return;
-            }
-            
-            try {
-                const input = window.opener.document.getElementById(openerInputField);
-                if (input) {
-                    input.value = filename;
-                    
-                    // Change-Event auslösen für jQuery/Framework-Kompatibilität
-                    if (window.opener.jQuery) {
-                        window.opener.jQuery(input).trigger('change');
-                    } else {
-                        const event = new Event('change', { bubbles: true });
-                        input.dispatchEvent(event);
-                    }
-                    
-                    // Fenster schließen
-                    window.close();
-                } else {
-                    alert('Fehler: Media-Eingabefeld nicht gefunden: ' + openerInputField);
-                }
-            } catch (error) {
-                console.error('Error in selectMedia:', error);
-                alert('Fehler beim Übernehmen der Datei');
-            }
-        };
-        
-        const selectMedialist = (filename) => {
-            if (!window.opener) {
-                alert('Fehler: Übergeordnetes Fenster nicht gefunden');
-                return;
-            }
-            
-            try {
-                const openerId = openerInputField.slice('REX_MEDIALIST_'.length);
-                const medialist = 'REX_MEDIALIST_SELECT_' + openerId;
-                
-                const source = window.opener.document.getElementById(medialist);
-                if (source) {
-                    const option = window.opener.document.createElement('OPTION');
-                    option.text = filename;
-                    option.value = filename;
-                    
-                    source.options.add(option, source.options.length);
-                    
-                    // writeREXMedialist aufrufen, falls verfügbar
-                    if (window.opener.writeREXMedialist) {
-                        window.opener.writeREXMedialist(openerId);
-                    }
-                    
-                    // Fenster schließen
-                    window.close();
-                } else {
-                    alert('Fehler: Medialist-Select nicht gefunden: ' + medialist);
-                }
-            } catch (error) {
-                console.error('Error in selectMedialist:', error);
-                alert('Fehler beim Übernehmen der Datei in die Medienliste');
-            }
-        };
-        
-        // FilePond Upload-Events abfangen (experimentell)
-        // Da das System event-basiert funktioniert, versuchen wir verschiedene Ansätze
-        document.addEventListener('filepond:fileprocessed', function(e) {
-            if (e.detail && e.detail.filename) {
-                handleSuccessfulUpload(e.detail.filename);
-            }
-        });
-        
-        // Alternative: MutationObserver für DOM-Änderungen
-        const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                if (mutation.type === 'childList') {
-                    mutation.addedNodes.forEach(function(node) {
-                        if (node.nodeType === Node.ELEMENT_NODE) {
-                            // Suche nach erfolgreichen Upload-Indikatoren
-                            const successElements = node.querySelectorAll ? 
-                                node.querySelectorAll('.filepond--file-status-main[data-filepond-file-status="Uploaded"]') : [];
-                            
-                            successElements.forEach(function(element) {
-                                // Versuche Dateiname zu extrahieren
-                                const fileElement = element.closest('.filepond--file');
-                                if (fileElement) {
-                                    const nameElement = fileElement.querySelector('.filepond--file-info-main');
-                                    if (nameElement && nameElement.textContent) {
-                                        const filename = nameElement.textContent.trim();
-                                        if (filename && !document.querySelector(`[data-filename="${filename}"]`)) {
-                                            setTimeout(() => handleSuccessfulUpload(filename), 100);
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    });
-                }
-            });
-        });
-        
-        // Observer starten
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-    }
-    
-    console.log("FilePond Uploader page initialized");
-
     // Initialsynchronisation: data-filepond-cat mit dem aktuell gewählten Select-Wert abgleichen.
     // Nötig wenn ein eingeschränkter User keine "Keine Kategorie"-Option hat und
     // der initiale data-filepond-cat-Wert 0 wäre, obwohl der Select bereits etwas auswählt.
@@ -464,36 +244,6 @@ $(document).on("rex:ready", function() {
         const newCategory = $(this).val();
         const $input = $("#filepond-upload");
         $input.attr("data-filepond-cat", newCategory);
-        
-        const pondElement = document.querySelector("#filepond-upload");
-        if (pondElement && pondElement.FilePond) {
-            pondElement.FilePond.removeFiles();
-            // FilePond neu initialisieren
-            document.dispatchEvent(new Event('filepond:init'));
-        }
-    });
-    
-    // Upload-Button für verzögerten Modus
-    $("#filepond-upload-btn").on("click", function() {
-        console.log("Upload button clicked");
-        
-        // Verwende die neue globale Referenz
-        const uploadElement = document.getElementById("filepond-upload");
-        
-        if (window.FilePondGlobal && window.FilePondGlobal.instances && window.FilePondGlobal.instances["filepond-upload"]) {
-            const pond = window.FilePondGlobal.instances["filepond-upload"];
-            console.log("FilePond instance found via global reference, processing files...", pond.getFiles().length);
-            
-            // Alle Dateien verarbeiten
-            pond.processFiles();
-        } 
-        else if (uploadElement && uploadElement.pondInstance) {
-            console.log("FilePond instance found via direct reference, processing files...", uploadElement.pondInstance.getFiles().length);
-            uploadElement.pondInstance.processFiles();
-        }
-        else {
-            console.error("FilePond instance not found! The element might not be initialized correctly.");
-        }
     });
 });
 </script>
@@ -512,14 +262,16 @@ if ($isMediaWidget): ?>
         resultsContainer: null,
         
         init() {
-            console.log('=== FilePond Media Widget Integration ===');
-            console.log('opener_input_field:', this.openerInputField);
-            console.log('isMediaList:', this.isMediaList);
             
-            document.addEventListener('DOMContentLoaded', () => {
+            const start = () => {
                 this.createInfoBanner();
                 this.startUploadMonitoring();
-            });
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', start);
+            } else {
+                start();
+            }
         },
         
         createInfoBanner() {
@@ -668,8 +420,6 @@ if ($isMediaWidget): ?>
         },
         
         handleUploadSuccess(filename) {
-            console.log('=== Upload Success ===');
-            console.log('Filename:', filename);
             
             const container = this.createResultsContainer();
             const filesList = container.querySelector('#filepond-uploaded-files');
@@ -745,10 +495,6 @@ if ($isMediaWidget): ?>
                     e.preventDefault();
                     const filename = e.target.dataset.filename;
                     
-                    console.log('=== Media Selection ===');
-                    console.log('Filename:', filename);
-                    console.log('Field:', this.openerInputField);
-                    console.log('Is MediaList:', this.isMediaList);
                     
                     if (this.isMediaList) {
                         this.selectMedialist(filename);
@@ -769,8 +515,6 @@ if ($isMediaWidget): ?>
         },
         
         selectMedia(filename, alt = '') {
-            console.log('=== selectMedia ===');
-            console.log('Filename:', filename);
             
             if (!window.opener) {
                 console.error('Opener-Fenster nicht gefunden!');
@@ -789,7 +533,6 @@ if ($isMediaWidget): ?>
                         input.dispatchEvent(event);
                     }
                     
-                    console.log('Datei erfolgreich übernommen:', filename);
                     window.close(); // Nur bei Einzelmedien schließen
                 } else {
                     console.error('Input-Feld nicht gefunden:', this.openerInputField);
@@ -800,7 +543,6 @@ if ($isMediaWidget): ?>
         },
         
         selectMedialist(filename) {
-            console.log('=== selectMedialist ===');
             
             if (!window.opener) {
                 console.error('Opener-Fenster nicht gefunden!');
@@ -826,7 +568,6 @@ if ($isMediaWidget): ?>
                             window.opener.writeREXMedialist(openerId);
                         }
                         
-                        console.log('Datei erfolgreich zur Medienliste hinzugefügt:', filename);
                         
                         // Button als "hinzugefügt" markieren
                         const button = document.querySelector(`button[data-filename="${filename}"]`);
@@ -836,7 +577,6 @@ if ($isMediaWidget): ?>
                             button.disabled = true;
                         }
                     } else {
-                        console.log('Datei bereits in Medienliste vorhanden:', filename);
                     }
                     
                     // Fenster NICHT schließen bei Medialists
@@ -849,7 +589,6 @@ if ($isMediaWidget): ?>
         },
         
         selectAllMedia() {
-            console.log('=== selectAllMedia ===');
             
             if (!window.opener) {
                 console.error('Opener-Fenster nicht gefunden!');
@@ -910,7 +649,6 @@ if ($isMediaWidget): ?>
                         window.opener.writeREXMedialist(openerId);
                     }
                     
-                    console.log(`${addedCount} Datei(en) erfolgreich zur Medienliste hinzugefügt:`, addedFiles);
                     
                     // "Alle übernehmen" Button deaktivieren
                     const selectAllButton = document.querySelector('#filepond-select-all');
@@ -922,7 +660,6 @@ if ($isMediaWidget): ?>
                     
                     // Fenster NICHT schließen
                 } else {
-                    console.log('Alle Dateien sind bereits in der Medienliste vorhanden.');
                 }
                 
             } catch (error) {
@@ -931,42 +668,12 @@ if ($isMediaWidget): ?>
         },
         
         startUploadMonitoring() {
-            console.log('=== Starting Upload Monitoring ===');
-            
-            const fileInputs = document.querySelectorAll('input[data-widget="filepond"]');
-            console.log('Found FilePond inputs:', fileInputs.length);
-            
-            fileInputs.forEach((input, index) => {
-                let lastValue = input.value;
-                
-                const checkValue = () => {
-                    if (input.value !== lastValue) {
-                        console.log(`Input ${index} value changed:`, lastValue, '->', input.value);
-                        
-                        if (input.value) {
-                            const newFiles = input.value.split(',').filter(Boolean);
-                            const oldFiles = lastValue ? lastValue.split(',').filter(Boolean) : [];
-                            
-                            const addedFiles = newFiles.filter(file => !oldFiles.includes(file));
-                            console.log('New files detected:', addedFiles);
-                            
-                            addedFiles.forEach(filename => {
-                                if (filename.trim()) {
-                                    this.handleUploadSuccess(filename.trim());
-                                }
-                            });
-                        }
-                        
-                        lastValue = input.value;
-                    }
-                };
-                
-                setInterval(checkValue, 1000);
-                input.addEventListener('change', checkValue);
-                input.addEventListener('input', checkValue);
+            // Das Widget meldet jede fertig hochgeladene Datei mit ihrem Medienpool-Namen
+            document.addEventListener('filepond:uploaded', (event) => {
+                if (event.detail && event.detail.filename) {
+                    this.handleUploadSuccess(event.detail.filename);
+                }
             });
-            
-            console.log('=== Media Widget Integration Ready ===');
         }
     };
     

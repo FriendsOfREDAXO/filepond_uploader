@@ -322,3 +322,6 @@ filepond_settings_ai_platform_no_profile = ai_platform enthält noch kein aktive
 filepond_ai_not_available = Kein ai_platform-Profil für Bildverständnis verfügbar.
 filepond_ai_profile_ready = KI bereit: Profil „{0}“ ({1})
 filepond_perm_mediaplace_upload = MediaPlace: Upload-Button und Drag&Drop durch den FilePond-Dialog ersetzen
+
+filepond_metainfo_alt = Alternativtext
+filepond_metainfo_copyright = Copyright

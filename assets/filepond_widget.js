@@ -1966,7 +1966,6 @@
                     uploadBtn.addEventListener('click', function(e) {
                         e.preventDefault();
                         
-                        console.log('Upload button clicked for input:', input.id);
                         if (pond && typeof pond.processFiles === 'function') {
                             pond.processFiles();
                         }
@@ -1976,22 +1975,32 @@
                     // Upload via Formular Submit
 
                     const formEl = pondRoot.closest('form');
+                    if (formEl) {
+                        formEl.addEventListener('submit', function (e) {
+                            // Nur neu hinzugefügte, noch nicht hochgeladene Dateien
+                            const pending = pond.getFiles().filter(item =>
+                                item.origin === FilePond.FileOrigin.INPUT
+                                && item.status !== FilePond.FileStatus.PROCESSING_COMPLETE
+                            );
+                            if (pending.length === 0) {
+                                return;
+                            }
 
-                    // Event-Listener für Submit
-                    formEl.addEventListener('submit', function(e) {
-                        e.preventDefault();
-
-                        console.log('Upload triggered for input:', input.id);
-                        if (pond && typeof pond.processFiles === 'function') {
-
-                        pond.on('processfiles', () => {
-                            console.log('All files uploaded');
-                            formEl.submit();
+                            e.preventDefault();
+                            // Mehrere Felder im selben Formular: erst absenden, wenn alle fertig sind
+                            formEl.filepondPending = formEl.filepondPending || new Set();
+                            const upload = pond.processFiles(pending.map(item => item.id));
+                            formEl.filepondPending.add(upload);
+                            upload.then(() => {
+                                formEl.filepondPending.delete(upload);
+                                if (formEl.filepondPending.size === 0) {
+                                    HTMLFormElement.prototype.submit.call(formEl);
+                                }
+                            }).catch(() => {
+                                formEl.filepondPending.delete(upload);
+                            });
                         });
-
-                        pond.processFiles();
-                        }  
-                    });
+                    }
 
                     }
             }
@@ -2026,8 +2035,7 @@
                         }
                     }
 
-                    // Debug Ausgabe (nur wenn debug mode im Browser aktiviert ist, kann man hier einkommentieren)
-                    // console.log('FilePond update: ', input.value);
+                    input.dispatchEvent(new CustomEvent('filepond:uploaded', { bubbles: true, detail: { filename: file.serverId } }));
                     
                     // Versuchen, den Dateinamen in der FilePond-UI zu aktualisieren
                     try {
@@ -2072,7 +2080,7 @@
 
             pond.on('reorderfiles', (files) => {
                 const newValue = files
-                    .map(file => file.serverId || file.source)
+                    .map(file => (typeof file.serverId === 'string' ? file.serverId : (typeof file.source === 'string' ? file.source : '')))
                     .filter(Boolean)
                     .join(',');
                 input.value = newValue;

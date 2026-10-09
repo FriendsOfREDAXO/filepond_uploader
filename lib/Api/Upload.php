@@ -783,8 +783,6 @@ class Upload extends rex_api_function
         }
 
         // Free memory
-        imagedestroy($srcImage);
-        imagedestroy($dstImage);
     }
 
     /**
@@ -841,7 +839,6 @@ class Upload extends rex_api_function
             case 2: // Horizontal flip
                 if (!imageflip($image, IMG_FLIP_HORIZONTAL)) {
                     $this->log('error', 'Failed to flip image horizontally (orientation 2)');
-                    imagedestroy($image);
                     return;
                 }
                 break;
@@ -849,67 +846,54 @@ class Upload extends rex_api_function
                 $rotated = imagerotate($image, 180, 0);
                 if (false === $rotated) {
                     $this->log('error', 'Failed to rotate image 180 degrees');
-                    imagedestroy($image);
                     return;
                 }
-                imagedestroy($image);
                 $image = $rotated;
                 break;
             case 4: // Vertical flip
                 if (!imageflip($image, IMG_FLIP_VERTICAL)) {
                     $this->log('error', 'Failed to flip image vertically (orientation 4)');
-                    imagedestroy($image);
                     return;
                 }
                 break;
             case 5: // Vertical flip + 90 rotate clockwise
                 if (!imageflip($image, IMG_FLIP_VERTICAL)) {
                     $this->log('error', 'Failed to flip image vertically before rotation (orientation 5)');
-                    imagedestroy($image);
                     return;
                 }
                 $rotated = imagerotate($image, -90, 0);
                 if (false === $rotated) {
                     $this->log('error', 'Failed to rotate image -90 degrees after vertical flip');
-                    imagedestroy($image);
                     return;
                 }
-                imagedestroy($image);
                 $image = $rotated;
                 break;
             case 6: // 90 rotate clockwise
                 $rotated = imagerotate($image, -90, 0);
                 if (false === $rotated) {
                     $this->log('error', 'Failed to rotate image -90 degrees');
-                    imagedestroy($image);
                     return;
                 }
-                imagedestroy($image);
                 $image = $rotated;
                 break;
             case 7: // Horizontal flip + 90 rotate clockwise
                 if (!imageflip($image, IMG_FLIP_HORIZONTAL)) {
                     $this->log('error', 'Failed to flip image horizontally before rotation (orientation 7)');
-                    imagedestroy($image);
                     return;
                 }
                 $rotated = imagerotate($image, -90, 0);
                 if (false === $rotated) {
                     $this->log('error', 'Failed to rotate image -90 degrees after horizontal flip');
-                    imagedestroy($image);
                     return;
                 }
-                imagedestroy($image);
                 $image = $rotated;
                 break;
             case 8: // 90 rotate counter-clockwise
                 $rotated = imagerotate($image, 90, 0);
                 if (false === $rotated) {
                     $this->log('error', 'Failed to rotate image 90 degrees');
-                    imagedestroy($image);
                     return;
                 }
-                imagedestroy($image);
                 $image = $rotated;
                 break;
         }
@@ -920,11 +904,9 @@ class Upload extends rex_api_function
         // Save the corrected image with error handling
         if (!@imagejpeg($image, $tmpFile, $quality)) {
             $this->log('error', 'Failed to save EXIF-corrected image to file: ' . $tmpFile);
-            imagedestroy($image);
             return;
         }
 
-        imagedestroy($image);
 
         $this->log('info', 'EXIF orientation corrected successfully');
     }
