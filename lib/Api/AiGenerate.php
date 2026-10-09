@@ -54,7 +54,7 @@ class AiGenerate extends rex_api_function
 
         foreach ($candidateFields as $field) {
             $files = rex_request::files($field, 'array', []);
-            if (!is_array($files) || [] === $files) {
+            if ([] === $files) {
                 continue;
             }
 

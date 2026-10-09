@@ -1,6 +1,6 @@
 <?php
 
-/** @var rex_addon $this */
+$addon = rex_addon::get('filepond_uploader');
 
 // 3.0: KI läuft über ai_platform, eigene Provider-, Modell- und Schlüssel-Einstellungen entfallen.
 foreach ([
@@ -15,11 +15,7 @@ foreach ([
     'openwebui_base_url',
     'openwebui_model',
 ] as $key) {
-    $this->removeConfig($key);
-}
-
-if (!$this->hasConfig('ai_platform_profile_id')) {
-    $this->setConfig('ai_platform_profile_id', 0);
+    $addon->removeConfig($key);
 }
 
 // Zwischenspeicher der früheren Gemini-Modellliste

@@ -594,9 +594,6 @@ class AltTextGenerator
 
         $width = imagesx($image);
         $height = imagesy($image);
-        if ($width <= 0 || $height <= 0) {
-            return null;
-        }
 
         $targetWidth = $width;
         $targetHeight = $height;
@@ -657,9 +654,7 @@ class AltTextGenerator
                 $image = $image->getImage();
             }
 
-            if (method_exists($image, 'autoOrient')) {
-                $image->autoOrient();
-            }
+            $image->autoOrient();
 
             $image->thumbnailImage($maxDimension, $maxDimension, true, true);
             $image->stripImage();
@@ -667,7 +662,7 @@ class AltTextGenerator
             $image->setImageCompressionQuality(85);
 
             $blob = $image->getImageBlob();
-            if (!is_string($blob) || '' === $blob) {
+            if ('' === $blob) {
                 return null;
             }
 
@@ -905,7 +900,7 @@ class AltTextGenerator
     }
 
     /**
-     * @param list<string> $languages
+     * @param array<mixed> $languages
      * @return list<string>
      */
     private function normalizeLanguageCodes(array $languages): array
@@ -1086,7 +1081,7 @@ class AltTextGenerator
         }
 
         if (!str_starts_with($json, '{')) {
-            if (preg_match('/\{.*\}/s', $json, $matches) && isset($matches[0])) {
+            if (1 === preg_match('/\{.*\}/s', $json, $matches)) {
                 $json = $matches[0];
             }
         }

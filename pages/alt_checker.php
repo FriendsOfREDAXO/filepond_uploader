@@ -40,7 +40,7 @@ $selMediaFilter->setAttribute('class', 'form-control');
 $selMediaFilter->setAttribute('onchange', 'this.form.submit(); return false;');
 $selMediaFilter->addOption($addon->i18n('alt_checker_all_categories'), '-1');
 $mediaPerm = rex::getUser()->getComplexPerm('media');
-if ($mediaPerm instanceof rex_media_perm && $mediaPerm->hasAll()) {
+if ($mediaPerm->hasAll()) {
     $selMediaFilter->addOption(rex_i18n::msg('pool_kats_no'), '0');
 }
 
@@ -74,8 +74,8 @@ $blockedCodes = array_values(array_diff(Config::aiBlockedLanguages(), [$fallback
 
 $languageCodeToName = [];
 foreach ($languages as $lang) {
-    $langCode = strtolower(substr((string) ($lang['code'] ?? ''), 0, 2));
-    $langName = (string) ($lang['name'] ?? strtoupper($langCode));
+    $langCode = strtolower(substr($lang['code'], 0, 2));
+    $langName = $lang['name'];
     if ('' !== $langCode && !isset($languageCodeToName[$langCode])) {
         $languageCodeToName[$langCode] = $langName;
     }

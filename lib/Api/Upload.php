@@ -112,8 +112,6 @@ class Upload extends rex_api_function
             // Nur eigene Meldungen nach aussen geben, keine Pfade oder Interna
             $this->sendResponse(['error' => $e instanceof rex_api_exception ? $e->getMessage() : 'Upload failed'], rex_response::HTTP_FORBIDDEN);
         }
-
-        return new rex_api_result(true);
     }
 
     /** Größte erlaubte Dateigröße in Byte: globale Einstellung, ggf. enger durch das Feld. */

@@ -12,7 +12,6 @@ use rex_user;
 use rex_ycom_auth;
 
 use function in_array;
-use function is_array;
 use function is_string;
 
 /**
@@ -122,8 +121,6 @@ trait AuthorizesRequests
             return false;
         }
 
-        $uploads = rex_session('filepond_uploads', 'array', []);
-
-        return is_array($uploads) && in_array($filename, $uploads, true);
+        return in_array($filename, rex_session('filepond_uploads', 'array', []), true);
     }
 }

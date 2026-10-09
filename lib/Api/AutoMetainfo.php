@@ -126,7 +126,7 @@ class AutoMetainfo extends rex_api_function
      * per rex_view::setJsProperty() direkt in die Backend-Seite geschrieben,
      * die API-Aktion get_ai_target_field bleibt fuer bestehende Aufrufer.
      *
-     * @return array{enabled: bool, target_field: string, languages: array<string, string>, fallback_language: string, blocked_languages: list<string>, mediaplace_own_alt_active: bool, mediaplace_own_alt_key: string}
+     * @return array{enabled: bool, target_field: string, languages: array<int, string>, fallback_language: string, blocked_languages: list<string>, i18n?: array<string, string>, mediaplace_own_alt_active: bool, mediaplace_own_alt_key: string}
      */
     public static function getAiButtonConfig(): array
     {
@@ -145,7 +145,7 @@ class AutoMetainfo extends rex_api_function
         // Sprach-Mapping (clang_id => code) für mehrsprachige Felder
         $languages = [];
         foreach (rex_clang::getAll() as $clang) {
-            $languages[(string) $clang->getId()] = $clang->getCode();
+            $languages[$clang->getId()] = $clang->getCode();
         }
 
         $fallbackLanguage = Config::aiFallbackLanguage();
@@ -261,30 +261,6 @@ class AutoMetainfo extends rex_api_function
                 'error' => rex_i18n::rawMsg('filepond_err_load_fields'),
             ], 500);
         }
-    }
-
-    /**
-     * Prüft ob ein Feld existiert (in Standard-Tabelle oder MetaInfo).
-     */
-    private function fieldExists(string $fieldName): bool
-    {
-        // Standard-Felder existieren immer
-        if (in_array($fieldName, ['title', 'med_alt', 'med_copyright'], true)) {
-            return true;
-        }
-
-        // Prüfe in MetaInfo
-        if (rex_addon::exists('metainfo') && rex_addon::get('metainfo')->isAvailable()) {
-            try {
-                $sql = rex_sql::factory();
-                $sql->setQuery('SELECT id FROM rex_metainfo_field WHERE name = ?', [$fieldName]);
-                return $sql->getRows() > 0;
-            } catch (Exception $e) {
-                return false;
-            }
-        }
-
-        return false;
     }
 
     /**
