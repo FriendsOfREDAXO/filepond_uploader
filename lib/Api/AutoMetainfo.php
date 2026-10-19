@@ -3,6 +3,7 @@
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
 use FriendsOfRedaxo\FilePondUploader\Config;
+use FriendsOfRedaxo\FilePondUploader\MetadataWriter;
 use Throwable;
 use rex;
 use Exception;
@@ -187,19 +188,8 @@ class AutoMetainfo extends rex_api_function
         try {
             $fields = [];
 
-            // Konfigurierte Blacklist laden
-            $excludedFields = rex_config::get('filepond_uploader', 'excluded_metadata_fields', []);
-            if (!is_array($excludedFields)) {
-                // rex_config_form speichert Arrays oft als pipe-separierten String (|value|value|)
-                if (is_string($excludedFields) && str_contains($excludedFields, '|')) {
-                    $excludedFields = array_filter(explode('|', $excludedFields), static fn (string $v): bool => '' !== $v);
-                } elseif (is_string($excludedFields)) {
-                    // Fallback, falls CSV
-                    $excludedFields = explode(',', $excludedFields);
-                } else {
-                    $excludedFields = [];
-                }
-            }
+            // Konfigurierte Blacklist laden (gleiche Auslegung wie MetadataWriter)
+            $excludedFields = Config::excludedMetadataFields();
 
             // 1. Titel ist immer dabei (REDAXO Standard)
             // Nur hinzufügen wenn nicht ausgeschlossen
@@ -247,6 +237,12 @@ class AutoMetainfo extends rex_api_function
                     $seenNames[] = $field['name'];
                     $uniqueFields[] = $field;
                 }
+            }
+
+            // Frontend: nur Felder anbieten, die Frontend-Uploads auch speichern dürfen
+            if ('frontend' === $this->caller) {
+                $frontendColumns = MetadataWriter::frontendColumns();
+                $uniqueFields = array_values(array_filter($uniqueFields, static fn (array $field): bool => in_array($field['name'], $frontendColumns, true)));
             }
 
             $this->sendResponse([

@@ -2,9 +2,14 @@
 
 /** @var rex_addon $this */
 
-// API-Token für externe Clients und als Schlüssel der Kategorie-Signaturen
+// API-Token für externe Clients
 if (!is_string($this->getConfig('api_token')) || '' === $this->getConfig('api_token')) {
     $this->setConfig('api_token', bin2hex(random_bytes(32)));
+}
+
+// Eigener Schlüssel für die Widget-Signaturen (getrennt vom API-Token)
+if (!is_string($this->getConfig('policy_secret')) || strlen($this->getConfig('policy_secret')) < 32) {
+    $this->setConfig('policy_secret', bin2hex(random_bytes(32)));
 }
 
 // Upload-Verzeichnisse

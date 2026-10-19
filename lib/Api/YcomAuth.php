@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\FilePondUploader\Api;
 
 use rex;
+use FriendsOfRedaxo\FilePondUploader\Helper;
 use FriendsOfRedaxo\FilePondUploader\YcomAuthSettings;
 use rex_api_function;
 use rex_backend_login;
@@ -35,6 +36,12 @@ class YcomAuth extends rex_api_function
         if (!rex_backend_login::hasSession()) {
             rex_response::setStatus(rex_response::HTTP_FORBIDDEN);
             rex_response::sendJson(['error' => 'forbidden']);
+            exit;
+        }
+
+        if (!Helper::isValidCsrfToken()) {
+            rex_response::setStatus(rex_response::HTTP_FORBIDDEN);
+            rex_response::sendJson(['error' => 'Invalid CSRF token']);
             exit;
         }
 

@@ -2,6 +2,11 @@
 
 $addon = rex_addon::get('filepond_uploader');
 
+// 3.0.1: eigener Schlüssel für Widget-Signaturen statt des API-Tokens
+if (!is_string($addon->getConfig('policy_secret')) || strlen($addon->getConfig('policy_secret')) < 32) {
+    $addon->setConfig('policy_secret', bin2hex(random_bytes(32)));
+}
+
 // 3.0: KI läuft über ai_platform, eigene Provider-, Modell- und Schlüssel-Einstellungen entfallen.
 foreach ([
     'ai_provider',

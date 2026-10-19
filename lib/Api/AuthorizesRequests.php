@@ -61,14 +61,18 @@ trait AuthorizesRequests
         }
 
         $sessionToken = rex_session('filepond_token', 'string', '');
-        $isYcomUser = rex_plugin::get('ycom', 'auth')->isAvailable() && null !== rex_ycom_auth::getUser();
-        if ($isYcomUser || ('' !== $apiToken && '' !== $sessionToken && hash_equals($apiToken, $sessionToken))) {
+        if ($this->isYcomUser() || ('' !== $apiToken && '' !== $sessionToken && hash_equals($apiToken, $sessionToken))) {
             $this->caller = 'frontend';
 
             return;
         }
 
         throw new rex_api_exception('Unauthorized');
+    }
+
+    protected function isYcomUser(): bool
+    {
+        return rex_plugin::get('ycom', 'auth')->isAvailable() && null !== rex_ycom_auth::getUser();
     }
 
     /**
@@ -93,8 +97,14 @@ trait AuthorizesRequests
         if ('frontend' === $this->caller || ('backend' === $this->caller && '' !== $signature)) {
             $types = trim(rex_request('policy_types', 'string', ''));
             $maxFilesize = max(0, rex_request('policy_maxsize', 'int', 0));
-            if (!Helper::isValidUploadPolicy($categoryId, $types, $maxFilesize, $signature)) {
+            $expires = rex_request('policy_expires', 'int', 0);
+            $context = trim(rex_request('policy_context', 'string', ''));
+            if (!Helper::isValidUploadPolicy($categoryId, $types, $maxFilesize, $signature, $expires, $context)) {
+                // Abgelaufen oder aus einer anderen Session: Seite neu laden
                 throw new rex_api_exception('Invalid category');
+            }
+            if ('frontend' === $this->caller && Helper::policyRequiresYcom($context) && !$this->isYcomUser()) {
+                throw new rex_api_exception('Unauthorized');
             }
             $this->policyTypes = $types;
             $this->policyMaxFilesizeMb = $maxFilesize;
@@ -123,6 +133,16 @@ trait AuthorizesRequests
     protected function isOwnPrepared(string $fileId): bool
     {
         return $this->isInSession('filepond_prepared', $fileId);
+    }
+
+    /** @return list<string> vorbereitete Uploads (fileId) der Session */
+    protected function preparedInSession(): array
+    {
+        if (PHP_SESSION_ACTIVE !== session_status()) {
+            return [];
+        }
+
+        return array_values(array_filter(rex_session('filepond_prepared', 'array', []), 'is_string'));
     }
 
     private function rememberInSession(string $key, string $value, int $limit): void

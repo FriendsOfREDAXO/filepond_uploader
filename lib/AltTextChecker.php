@@ -8,9 +8,11 @@ use Exception;
 use rex_addon;
 use rex_clang;
 use rex_config;
+use rex_logger;
 use rex_media;
 use rex_media_cache;
 use rex_sql;
+use rex_user;
 
 /**
  * Alt-Text-Checker - Findet Bilder ohne Alt-Text für Barrierefreiheit
@@ -124,8 +126,56 @@ class AltTextChecker
     }
 
     /**
+     * Medienkategorien, die der Benutzer sehen darf; null = alle (Admin bzw. Recht für alle Kategorien).
+     *
+     * @return list<int>|null
+     */
+    public static function allowedCategoryIds(rex_user $user): ?array
+    {
+        $perm = $user->getComplexPerm('media');
+        if (null === $perm || $perm->hasAll()) {
+            return null === $perm ? [] : null;
+        }
+
+        $ids = [];
+        $sql = rex_sql::factory();
+        $sql->setQuery('SELECT id FROM ' . rex::getTable('media_category'));
+        foreach ($sql as $row) {
+            $id = (int) $row->getValue('id');
+            if ($perm->hasCategoryPerm($id)) {
+                $ids[] = $id;
+            }
+        }
+
+        return $ids;
+    }
+
+    /** Darf der Benutzer das Medium bearbeiten (Kategorie-Recht im Medienpool)? */
+    public static function userMayEdit(rex_user $user, string $filename): bool
+    {
+        $media = '' === $filename ? null : rex_media::get($filename);
+        $perm = $user->getComplexPerm('media');
+
+        return null !== $media && null !== $perm && $perm->hasCategoryPerm($media->getCategoryId());
+    }
+
+    /** SQL-Bedingung für erlaubte Kategorien, '' = keine Einschränkung. */
+    private static function categoryCondition(?array $categoryIds, string $column = 'category_id'): string
+    {
+        if (null === $categoryIds) {
+            return '';
+        }
+        if ([] === $categoryIds) {
+            return '0 = 1';
+        }
+
+        return $column . ' IN (' . implode(',', array_map('intval', $categoryIds)) . ')';
+    }
+
+    /**
      * Findet alle Bilder ohne Alt-Text
      * Dekorative Bilder (aus Negativ-Liste) werden ausgeschlossen.
+     * $filters['category_ids'] (Liste) beschränkt auf Kategorien mit Rechten, siehe allowedCategoryIds().
      *
      * @param array<string, mixed> $filters
      * @return list<array<string, mixed>>
@@ -152,6 +202,12 @@ class AltTextChecker
         }
         if (isset($filters['category_id']) && $filters['category_id'] >= 0) {
             $where[] = 'category_id = ' . (int) $filters['category_id'];
+        }
+        if (array_key_exists('category_ids', $filters)) {
+            $condition = self::categoryCondition(is_array($filters['category_ids']) ? $filters['category_ids'] : null);
+            if ('' !== $condition) {
+                $where[] = $condition;
+            }
         }
 
         // Sortierung
@@ -214,9 +270,10 @@ class AltTextChecker
      * Zählt Bilder mit und ohne Alt-Text
      * Dekorative Bilder (aus Negativ-Liste) zählen als "mit Alt-Text".
      *
+     * @param list<int>|null $categoryIds nur diese Kategorien, null = alle
      * @return array{total: int, with_alt: int, without_alt: int, decorative: int, percent_complete: float|int}
      */
-    public static function getStatistics(): array
+    public static function getStatistics(?array $categoryIds = null): array
     {
         if (!self::checkAltFieldExists()) {
             return [
@@ -231,10 +288,12 @@ class AltTextChecker
         $sql = rex_sql::factory();
 
         // Alle Bilder laden und prüfen (wegen JSON-Format)
-        $sql->setQuery('SELECT filename, med_alt FROM ' . rex::getTable('media') . ' WHERE filetype LIKE "image/%"');
+        $condition = self::categoryCondition($categoryIds);
+        $sql->setQuery('SELECT filename, med_alt FROM ' . rex::getTable('media') . ' WHERE filetype LIKE "image/%"' . ('' !== $condition ? ' AND ' . $condition : ''));
 
         $total = 0;
         $withAlt = 0;
+        $decorativeCount = 0;
         $decorativeList = self::getDecorativeList();
 
         foreach ($sql as $row) {
@@ -244,6 +303,7 @@ class AltTextChecker
             // Dekorative Bilder zählen als "mit Alt-Text"
             if (in_array($filename, $decorativeList, true)) {
                 ++$withAlt;
+                ++$decorativeCount;
                 continue;
             }
 
@@ -254,7 +314,6 @@ class AltTextChecker
         }
 
         $withoutAlt = $total - $withAlt;
-        $decorativeCount = count($decorativeList);
         $percentComplete = $total > 0 ? round(($withAlt / $total) * 100, 1) : 100;
 
         return [
@@ -285,6 +344,11 @@ class AltTextChecker
             if (null === $media) {
                 return ['success' => false, 'error' => 'Medium nicht gefunden'];
             }
+
+            // Keine Tags im Alt-Text (wie MetadataWriter)
+            $altText = is_array($altText)
+                ? array_map(static fn ($value): string => trim(strip_tags(is_scalar($value) ? (string) $value : '')), $altText)
+                : trim(strip_tags($altText));
 
             /** @var string $valueToSave */
             $valueToSave = is_array($altText) ? '' : $altText;
@@ -347,7 +411,9 @@ class AltTextChecker
                 'alt_text' => $valueToSave,
             ];
         } catch (Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
+            rex_logger::logException($e);
+
+            return ['success' => false, 'error' => rex_i18n::rawMsg('filepond_error_unknown')];
         }
     }
 
@@ -376,7 +442,9 @@ class AltTextChecker
                 'decorative' => true,
             ];
         } catch (Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
+            rex_logger::logException($e);
+
+            return ['success' => false, 'error' => rex_i18n::rawMsg('filepond_error_unknown')];
         }
     }
 
@@ -398,7 +466,9 @@ class AltTextChecker
                 'decorative' => false,
             ];
         } catch (Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
+            rex_logger::logException($e);
+
+            return ['success' => false, 'error' => rex_i18n::rawMsg('filepond_error_unknown')];
         }
     }
 
@@ -433,9 +503,10 @@ class AltTextChecker
      * Bulk-Update für mehrere Bilder.
      *
      * @param list<array{filename?: string, lang_texts?: array<int|string, string>, alt_text?: string}> $updates
+     * @param rex_user|null $user mit Benutzer nur Medien aus Kategorien mit Rechten
      * @return array{success: int, failed: int, errors: array<string, string>}
      */
-    public static function bulkUpdateAltText(array $updates): array
+    public static function bulkUpdateAltText(array $updates, ?rex_user $user = null): array
     {
         $results = [
             'success' => 0,
@@ -444,7 +515,12 @@ class AltTextChecker
         ];
 
         foreach ($updates as $update) {
-            if (!isset($update['filename']) || '' === $update['filename']) {
+            if (!isset($update['filename']) || !is_string($update['filename']) || '' === $update['filename']) {
+                continue;
+            }
+            if (null !== $user && !self::userMayEdit($user, $update['filename'])) {
+                ++$results['failed'];
+                $results['errors'][$update['filename']] = rex_i18n::rawMsg('filepond_no_permission');
                 continue;
             }
 
@@ -498,9 +574,10 @@ class AltTextChecker
     /**
      * Holt Kategorien mit Anzahl fehlender Alt-Texte.
      *
+     * @param list<int>|null $categoryIds nur diese Kategorien, null = alle
      * @return list<array<string, mixed>>
      */
-    public static function getCategoriesWithMissingAlt(): array
+    public static function getCategoriesWithMissingAlt(?array $categoryIds = null): array
     {
         if (!self::checkAltFieldExists()) {
             return [];
@@ -516,6 +593,7 @@ class AltTextChecker
             LEFT JOIN ' . rex::getTable('media_category') . ' c ON m.category_id = c.id
             WHERE m.filetype LIKE "image/%" 
               AND (m.med_alt IS NULL OR m.med_alt = "")
+              ' . ('' !== ($condition = self::categoryCondition($categoryIds, 'm.category_id')) ? 'AND ' . $condition : '') . '
             GROUP BY m.category_id, c.name
             ORDER BY missing_count DESC
         ', [rex_i18n::rawMsg('pool_kats_no')]);

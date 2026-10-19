@@ -135,18 +135,52 @@ class Helper
         return rex_csrf_token::factory('filepond_uploader')->isValid();
     }
 
+    /** Gültigkeit einer Widget-Signatur in Sekunden (jede Seitenausgabe erzeugt eine neue). */
+    public const POLICY_TTL = 86400;
+
+    /**
+     * Ablaufzeit für neue Signaturen: volle Stunde plus POLICY_TTL, innerhalb einer Stunde gleich
+     * (so bleiben Seiten-Caches kurzzeitig stabil).
+     */
+    public static function policyExpires(): int
+    {
+        return (intdiv(time(), 3600) + 1) * 3600 + self::POLICY_TTL;
+    }
+
     /**
      * Signiert Kategorie und Feldgrenzen eines Widgets. Der Server übernimmt nur signierte
      * Werte, Kategorie, Dateitypen und Größe lassen sich clientseitig nicht ändern.
+     * Die Signatur gilt nur bis $expires, nur in der aktuellen Session und nur für $context
+     * (z. B. "ycom" = nur für angemeldete YCom-Nutzer).
      */
-    public static function signUploadPolicy(int $categoryId, string $allowedTypes = '', int $maxFilesizeMb = 0): string
+    public static function signUploadPolicy(int $categoryId, string $allowedTypes = '', int $maxFilesizeMb = 0, int $expires = 0, string $context = ''): string
     {
-        return hash_hmac('sha256', 'filepond_policy:' . $categoryId . '|' . $allowedTypes . '|' . $maxFilesizeMb, self::secret());
+        if ($expires <= 0) {
+            $expires = self::policyExpires();
+        }
+
+        return hash_hmac('sha256', implode('|', [
+            'filepond_policy_v2',
+            $categoryId,
+            $allowedTypes,
+            $maxFilesizeMb,
+            $expires,
+            $context,
+            self::sessionHash(),
+        ]), self::secret());
     }
 
-    public static function isValidUploadPolicy(int $categoryId, string $allowedTypes, int $maxFilesizeMb, string $signature): bool
+    public static function isValidUploadPolicy(int $categoryId, string $allowedTypes, int $maxFilesizeMb, string $signature, int $expires = 0, string $context = ''): bool
     {
-        return '' !== $signature && hash_equals(self::signUploadPolicy($categoryId, $allowedTypes, $maxFilesizeMb), $signature);
+        return '' !== $signature
+            && $expires > time()
+            && hash_equals(self::signUploadPolicy($categoryId, $allowedTypes, $maxFilesizeMb, $expires, $context), $signature);
+    }
+
+    /** Kontext, der eine YCom-Anmeldung verlangt: "ycom" oder "ycom:…". */
+    public static function policyRequiresYcom(string $context): bool
+    {
+        return 'ycom' === $context || str_starts_with($context, 'ycom:');
     }
 
     /**
@@ -190,16 +224,24 @@ class Helper
     /**
      * Sicherheits-Attribute eines Upload-Widgets: CSRF-Token, signierte Kategorie und Feldgrenzen.
      * Ohne $allowedTypes/$maxFilesizeMb gelten serverseitig nur die globalen Einstellungen.
+     * $context bindet die Signatur zusätzlich an einen Einsatzort (frei wählbar, z. B. Formular/Feld;
+     * "ycom" bzw. "ycom:…" erlaubt Uploads nur angemeldeten YCom-Nutzern).
      */
-    public static function widgetSecurityAttributes(int $categoryId, string $allowedTypes = '', int $maxFilesizeMb = 0): string
+    public static function widgetSecurityAttributes(int $categoryId, string $allowedTypes = '', int $maxFilesizeMb = 0, string $context = ''): string
     {
         $allowedTypes = trim($allowedTypes);
         $maxFilesizeMb = max(0, $maxFilesizeMb);
+        $context = trim($context);
+        // Token zuerst: startet die Session, an die die Signatur gebunden wird
+        $csrf = self::csrfToken();
+        $expires = self::policyExpires();
 
-        return ' data-filepond-csrf="' . rex_escape(self::csrfToken()) . '"'
-            . ' data-filepond-cat-sig="' . rex_escape(self::signUploadPolicy($categoryId, $allowedTypes, $maxFilesizeMb)) . '"'
+        return ' data-filepond-csrf="' . rex_escape($csrf) . '"'
+            . ' data-filepond-cat-sig="' . rex_escape(self::signUploadPolicy($categoryId, $allowedTypes, $maxFilesizeMb, $expires, $context)) . '"'
             . ' data-filepond-policy-types="' . rex_escape($allowedTypes) . '"'
-            . ' data-filepond-policy-maxsize="' . $maxFilesizeMb . '"';
+            . ' data-filepond-policy-maxsize="' . $maxFilesizeMb . '"'
+            . ' data-filepond-policy-expires="' . $expires . '"'
+            . ' data-filepond-policy-context="' . rex_escape($context) . '"';
     }
 
     /**
@@ -252,14 +294,26 @@ class Helper
         return ' data-filepond-image-editor="' . (Config::isEnabled('enable_image_editor', true) ? 'true' : 'false') . '"';
     }
 
+    /** Eigener Signaturschlüssel (nicht der API-Token), wird bei Bedarf erzeugt. */
     private static function secret(): string
     {
-        $token = rex_config::get('filepond_uploader', 'api_token', '');
-        if (!is_string($token) || '' === $token) {
-            $token = bin2hex(random_bytes(32));
-            rex_config::set('filepond_uploader', 'api_token', $token);
+        $secret = rex_config::get('filepond_uploader', 'policy_secret', '');
+        if (!is_string($secret) || strlen($secret) < 32) {
+            $secret = bin2hex(random_bytes(32));
+            rex_config::set('filepond_uploader', 'policy_secret', $secret);
         }
 
-        return $token;
+        return $secret;
+    }
+
+    /** Bindet Signaturen an die Session; ohne Session leer. */
+    private static function sessionHash(): string
+    {
+        if (PHP_SESSION_ACTIVE !== session_status()) {
+            rex_login::startSession();
+        }
+        $id = session_id();
+
+        return false === $id || '' === $id ? '' : hash('sha256', 'filepond_session|' . $id);
     }
 }

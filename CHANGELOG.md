@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.1.0 (2026-10-19)
+
+Sicherheits-Update. Die Version springt auf 3.1.0, weil sich für Integratoren einiges ändert (siehe „Geänderte Abläufe“); wer nur das YForm-Feld und die mitgelieferten Widgets nutzt, muss nichts anpassen.
+
+### ⚠️ Geänderte Abläufe
+- **Widget-Signaturen laufen ab**: Sie gelten rund 24 Stunden, nur in der Session, in der die Seite ausgegeben wurde, und nutzen einen eigenen Schlüssel statt des API-Tokens. Alle bisherigen Signaturen sind nach dem Update ungültig. Seiten mit Upload-Widget nicht lange im Seiten-Cache halten; nach Ablauf genügt Neuladen. Eigene Upload-Skripte schicken zusätzlich `policy_expires` und `policy_context` mit (`data-filepond-policy-expires`, `data-filepond-policy-context`).
+- **YForm-Feld im Frontend** übernimmt nur noch Dateien aus dem gespeicherten Datensatz und eigene Uploads der Session; die Zuordnung über den Original-Dateinamen gibt es nur noch im Backend. Die Höchstzahl der Dateien prüft jetzt der Server.
+- **Metadaten aus dem Frontend** werden nur für Titel, Alt-Text, Copyright, Beschreibung und die Pflichtfelder gespeichert; weitere Felder über den neuen Extension Point `FILEPOND_FRONTEND_METADATA_FIELDS`. Im Backend nur noch die Felder des Metadaten-Dialogs (ohne ausgeblendete).
+- **Erlaubte Dateitypen** aus den Einstellungen gelten auch, wenn ein Widget keine eigenen Typen vorgibt, und für externe Clients mit API-Token.
+- **KI-Vorschläge** brauchen das Recht `filepond_uploader[upload]` oder `filepond_uploader[alt_checker]` und Rechte an der Medienkategorie; Limit 100 Anfragen je Benutzer in 10 Minuten (`ai_rate_limit`).
+
+### 🔒 Sicherheit
+- **YForm-Feld**: Frontend-Formulare konnten beliebige Dateien des Medienpools übernehmen (auch in Mail-Anhänge) und mit Auto-Cleanup fremde Dateien löschen lassen.
+- **Alt-Text-Checker**: Liste, Statistik und Bearbeiten beachten die Kategorie-Rechte im Medienpool; Alt-Texte werden ohne HTML gespeichert.
+- **Chunk-Uploads**: Größe, Chunk-Anzahl und Feldgrenzen werden schon beim Empfang jedes Chunks geprüft, zu große Uploads sofort verworfen. Pro Session höchstens 20 offene Uploads, bei knappem Speicherplatz keine Uploads (Einstellung `min_free_disk_mb`), Reste abgebrochener Uploads werden nach 2 statt 6 Stunden gelöscht.
+- **Metadaten**: Uploads konnten beliebige `med_*`-Spalten beschreiben, auch ausgeblendete und interne.
+- **YCom-Medienrechte** (Backend): Speichern der Voreinstellungen braucht den CSRF-Token.
+- Fehlermeldungen geben keine Server-Pfade oder Datenbankfehler mehr aus, Details stehen im Systemlog.
+- Serverseitige Bildoptimierung mit GD überspringt Bilder über 50 Megapixel statt den Speicher auszuschöpfen.
+- Die erweiterten Medienpool-Dateitypen gelten im Frontend nur noch für die eigene Upload-API, nicht für API-Aufrufe anderer AddOns.
+
+### 🐛 Bugfixes
+- **Eigenen Upload entfernen** löschte die Datei nicht: der Lösch-Auftrag kam ohne Parameter beim Server an.
+- **MetadataWriter leert Cache und Instanz** nach dem Schreiben (REDAXO 5.21.5 merkt sich auch nicht gefundene Medien), sonst fehlten Titel und Alt-Text direkt nach dem Upload.
+- KI-Buttons im Medienpool nur noch für Benutzer, die die KI nutzen dürfen.
+- Fehlende Sprachschlüssel für „keine Berechtigung“.
+
 ## 3.0.0 (2026-10-09)
 
 Das AddOn ist zu [Friends Of REDAXO](https://github.com/FriendsOfREDAXO/filepond_uploader) umgezogen (vorher KLXM/filepond_uploader, alte Links leiten weiter). Autoren: Friends Of REDAXO, KLXM Crossmedia GmbH, Thomas Skerbis.

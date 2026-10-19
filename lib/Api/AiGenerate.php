@@ -8,12 +8,18 @@ use rex_api_function;
 use rex_api_result;
 use rex_backend_login;
 use rex_config;
+use rex_dir;
+use rex_i18n;
+use rex_logger;
 use rex_path;
 use rex_plugin;
 use rex_request;
 use rex_response;
+use rex_user;
 use rex_ycom_auth;
 use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
+use FriendsOfRedaxo\FilePondUploader\AltTextChecker;
+use FriendsOfRedaxo\FilePondUploader\Config;
 
 /**
  * API Endpoint für AI Alt-Text Generierung.
@@ -130,6 +136,53 @@ class AiGenerate extends rex_api_function
         exit;
     }
 
+    /** KI-Vorschläge: Admins und Benutzer mit Upload- oder Alt-Text-Checker-Recht. */
+    public static function userMayUseAi(rex_user $user): bool
+    {
+        return $user->isAdmin() || $user->hasPerm('filepond_uploader[upload]') || $user->hasPerm('filepond_uploader[alt_checker]');
+    }
+
+    /**
+     * Einfaches Limit je Benutzer: höchstens `ai_rate_limit` Anfragen (Standard 100) in 10 Minuten.
+     * Gibt false zurück, wenn das Limit erreicht ist.
+     */
+    public static function consumeRateLimit(rex_user $user): bool
+    {
+        $limit = Config::int('ai_rate_limit', 100);
+        if ($limit <= 0) {
+            $limit = 100;
+        }
+        $window = 600;
+
+        $dir = rex_path::addonCache('filepond_uploader', 'ai_rate');
+        if (!rex_dir::create($dir)) {
+            return true;
+        }
+        $handle = @fopen($dir . '/' . $user->getId() . '.json', 'c+');
+        if (false === $handle) {
+            return true;
+        }
+
+        try {
+            flock($handle, LOCK_EX);
+            $stamps = json_decode((string) stream_get_contents($handle), true);
+            $since = time() - $window;
+            $stamps = array_values(array_filter(is_array($stamps) ? $stamps : [], static fn ($t): bool => is_int($t) && $t > $since));
+            if (count($stamps) >= $limit) {
+                return false;
+            }
+            $stamps[] = time();
+            ftruncate($handle, 0);
+            rewind($handle);
+            fwrite($handle, (string) json_encode($stamps));
+
+            return true;
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+    }
+
     public function execute(): rex_api_result
     {
         // KI-Anfragen kosten Geld bzw. Rechenzeit: nur für Backend-User
@@ -138,16 +191,23 @@ class AiGenerate extends rex_api_function
         } catch (Throwable) {
             $this->sendJson(['success' => false, 'error' => 'Unauthorized'], rex_response::HTTP_UNAUTHORIZED);
         }
-        if ('backend' !== $this->caller) {
+        if ('backend' !== $this->caller || null === $this->backendUser || !self::userMayUseAi($this->backendUser)) {
             $this->sendJson(['success' => false, 'error' => 'Unauthorized'], rex_response::HTTP_FORBIDDEN);
+        }
+
+        $mediaName = rex_request('media_name', 'string', '');
+        if ('' !== $mediaName && !AltTextChecker::userMayEdit($this->backendUser, $mediaName)) {
+            $this->sendJson(['success' => false, 'error' => 'No permission for this media category'], rex_response::HTTP_FORBIDDEN);
         }
 
         // Prüfen ob AI aktiviert ist
         if (!AltTextGenerator::isEnabled()) {
             $this->sendJson(['success' => false, 'error' => 'AI generation is disabled'], rex_response::HTTP_FORBIDDEN);
         }
+        if (!self::consumeRateLimit($this->backendUser)) {
+            $this->sendJson(['success' => false, 'error' => rex_i18n::rawMsg('filepond_ai_rate_limited')], '429 Too Many Requests');
+        }
 
-        $mediaName = rex_request('media_name', 'string', '');
         $language = rex_request('language', 'string', 'de');
         $languagesRaw = rex_request('languages', 'array', []);
 
@@ -205,7 +265,8 @@ class AiGenerate extends rex_api_function
                 }
             }
         } catch (Exception $e) {
-            $result = ['success' => false, 'error' => $e->getMessage()];
+            rex_logger::logException($e);
+            $result = ['success' => false, 'error' => rex_i18n::rawMsg('filepond_error_unknown')];
         }
 
         $this->sendJson($result);
