@@ -4,6 +4,8 @@ namespace FriendsOfRedaxo\FilePondUploader;
 
 use rex;
 use rex_clang;
+use rex_media;
+use rex_media_cache;
 use rex_sql;
 
 use function array_key_exists;
@@ -56,6 +58,10 @@ final class MetadataWriter
 
         if ($hasValues) {
             $sql->update();
+            // Cache und gemerkte Instanz leeren: seit REDAXO 5.21.5 merkt sich der Instance-Pool auch „nicht gefunden“
+            // (rex_media_service::addMedia() fragt beim Suchen eines freien Namens rex_media::get() ab), vgl. uppy #51
+            rex_media_cache::delete($filename);
+            rex_media::clearInstance($filename);
         }
     }
 
