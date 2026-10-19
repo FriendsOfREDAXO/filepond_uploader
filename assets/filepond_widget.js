@@ -255,6 +255,9 @@
                 formData.append('category_sig', input.dataset.filepondCatSig || '');
                 formData.append('policy_types', input.dataset.filepondPolicyTypes || '');
                 formData.append('policy_maxsize', input.dataset.filepondPolicyMaxsize || '0');
+                // Ablaufzeit und Kontext gehören zur Signatur (Helper::widgetSecurityAttributes())
+                formData.append('policy_expires', input.dataset.filepondPolicyExpires || '0');
+                formData.append('policy_context', input.dataset.filepondPolicyContext || '');
             };
             const mediaUrl = input.dataset.filepondMediaUrl || '/media/';
 
@@ -1742,18 +1745,21 @@
                             }
                         };
                     },
-                    revert: {
-                        method: 'POST',
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        ondata: (formData) => {
-                            formData.append('rex-api-call', 'filepond_uploader');
-                            appendSecurity(formData);
-                            formData.append('func', 'delete');
-                            formData.append('filename', formData.get('serverId'));
-                            return formData;
-                        }
+                    // Eigene Funktion statt Objekt-Konfiguration: FilePond schickt bei "revert" nur die
+                    // serverId als Text, ondata erhält kein FormData -- der Löschauftrag kam nie an
+                    revert: (serverId, load, error) => {
+                        const formData = new FormData();
+                        formData.append('rex-api-call', 'filepond_uploader');
+                        appendSecurity(formData);
+                        formData.append('func', 'delete');
+                        formData.append('filename', String(serverId || '').replace(/^"|"$/g, ''));
+                        fetch(basePath, {
+                            method: 'POST',
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                            body: formData
+                        })
+                            .then(response => response.ok ? load() : response.json().then(r => error(r.error || 'Delete failed'), () => error('Delete failed')))
+                            .catch(e => error(e.message));
                     },
                     load: (source, load, error, progress, abort, headers) => {
                         const url = mediaUrl + source.replace(/^"|"$/g, '');

@@ -66,8 +66,9 @@ rex_extension::register('PACKAGES_INCLUDED', static function () {
     });
 });
 
-// Medienpool-MIME-Types um die in FilePond erlaubten Typen erweitern (nur wo hochgeladen wird)
-if (rex_addon::get('mediapool')->isAvailable() && (rex::isBackend() || '' !== rex_request('rex-api-call', 'string', ''))) {
+// Medienpool-MIME-Types um die in FilePond erlaubten Typen erweitern (nur wo hochgeladen wird:
+// Backend und die eigene Upload-API, nicht die API-Aufrufe anderer AddOns im Frontend)
+if (rex_addon::get('mediapool')->isAvailable() && (rex::isBackend() || 'filepond_uploader' === rex_request('rex-api-call', 'string', ''))) {
     MimeTypes::extendMediapool(Config::string('allowed_types'));
 }
 
@@ -77,7 +78,12 @@ if (rex::isBackend() && rex::getUser()) {
 
     // KI-Button-Konfiguration fuer mediapool_ai.js direkt in die Seite (rex.filepond_ai),
     // statt sie auf jeder Backend-Seite per eigenem Request nachzuladen.
-    rex_view::setJsProperty('filepond_ai', AutoMetainfo::getAiButtonConfig());
+    $aiButtonConfig = AutoMetainfo::getAiButtonConfig();
+    // KI-Buttons nur für Benutzer, die die KI-API nutzen dürfen
+    if (!AiGenerate::userMayUseAi(rex::getUser())) {
+        $aiButtonConfig['enabled'] = false;
+    }
+    rex_view::setJsProperty('filepond_ai', $aiButtonConfig);
     rex_view::setJsProperty('filepond_csrf', Helper::csrfToken());
 
     // Settings-Seite: JS für Dateitypen-Auswahl

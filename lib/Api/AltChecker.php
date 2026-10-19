@@ -8,7 +8,9 @@ use rex;
 use Exception;
 use rex_api_function;
 use rex_api_result;
+use rex_logger;
 use rex_response;
+use rex_user;
 use FriendsOfRedaxo\FilePondUploader\Ai\AltTextGenerator;
 use FriendsOfRedaxo\FilePondUploader\AltTextChecker;
 
@@ -19,6 +21,8 @@ class AltChecker extends rex_api_function
 {
     protected $published = false;  // Nur für eingeloggte Backend-User
 
+    private rex_user $user;
+
     public function execute(): rex_api_result
     {
         rex_response::cleanOutputBuffers();
@@ -26,11 +30,12 @@ class AltChecker extends rex_api_function
         // Berechtigung prüfen
         $user = rex::getUser();
         if (!rex::isBackend() || null === $user || (!$user->isAdmin() && !$user->hasPerm('filepond_uploader[alt_checker]'))) {
-            $this->sendJson(['error' => rex_i18n::rawMsg('no_perm')], rex_response::HTTP_FORBIDDEN);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_no_permission')], rex_response::HTTP_FORBIDDEN);
         }
         if (!Helper::isValidCsrfToken()) {
             $this->sendJson(['error' => 'Invalid CSRF token'], rex_response::HTTP_FORBIDDEN);
         }
+        $this->user = $user;
 
         $action = rex_request('action', 'string');
 
@@ -79,6 +84,9 @@ class AltChecker extends rex_api_function
         if ($filterCategory >= 0) {
             $filters['category_id'] = $filterCategory;
         }
+        // Nur Kategorien mit Medienpool-Rechten
+        $categoryIds = AltTextChecker::allowedCategoryIds($this->user);
+        $filters['category_ids'] = $categoryIds;
 
         try {
             // Prüfen ob med_alt Feld existiert
@@ -90,14 +98,15 @@ class AltChecker extends rex_api_function
             }
 
             $images = AltTextChecker::findImagesWithoutAlt($filters);
-            $stats = AltTextChecker::getStatistics();
+            $stats = AltTextChecker::getStatistics($categoryIds);
 
             $this->sendJson([
                 'images' => $images,
                 'stats' => $stats,
             ]);
         } catch (Exception $e) {
-            $this->sendJson(['error' => $e->getMessage()]);
+            rex_logger::logException($e);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_error_unknown')]);
         }
     }
 
@@ -111,15 +120,17 @@ class AltChecker extends rex_api_function
                 ]);
             }
 
-            $stats = AltTextChecker::getStatistics();
-            $categories = AltTextChecker::getCategoriesWithMissingAlt();
+            $categoryIds = AltTextChecker::allowedCategoryIds($this->user);
+            $stats = AltTextChecker::getStatistics($categoryIds);
+            $categories = AltTextChecker::getCategoriesWithMissingAlt($categoryIds);
 
             $this->sendJson([
                 'stats' => $stats,
                 'categories' => $categories,
             ]);
         } catch (Exception $e) {
-            $this->sendJson(['error' => $e->getMessage()]);
+            rex_logger::logException($e);
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_error_unknown')]);
         }
     }
 
@@ -132,6 +143,9 @@ class AltChecker extends rex_api_function
 
         if ('' === $filename) {
             $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_filename')]);
+        }
+        if (!AltTextChecker::userMayEdit($this->user, $filename)) {
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_no_permission')], rex_response::HTTP_FORBIDDEN);
         }
 
         // Dekoratives Bild: In Negativ-Liste aufnehmen
@@ -168,7 +182,7 @@ class AltChecker extends rex_api_function
             $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_updates')]);
         }
 
-        $result = AltTextChecker::bulkUpdateAltText($updates);
+        $result = AltTextChecker::bulkUpdateAltText(is_array($updates) ? array_values($updates) : [], $this->user);
         $this->sendJson($result);
     }
 
@@ -177,16 +191,21 @@ class AltChecker extends rex_api_function
      */
     private function handleAiGenerate(): void
     {
-        if (!AltTextGenerator::isEnabled()) {
-            $this->sendJson(['error' => 'AI Alt-Text-Generierung ist nicht aktiviert oder API-Key fehlt']);
-        }
-
         $filename = rex_request('filename', 'string', '');
         $language = rex_request('language', 'string', 'de');
         $languages = rex_request('languages', 'array', []);
 
         if ('' === $filename) {
             $this->sendJson(['error' => rex_i18n::rawMsg('filepond_err_no_filename')]);
+        }
+        if (!AltTextChecker::userMayEdit($this->user, $filename)) {
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_no_permission')], rex_response::HTTP_FORBIDDEN);
+        }
+        if (!AltTextGenerator::isEnabled()) {
+            $this->sendJson(['error' => 'AI Alt-Text-Generierung ist nicht aktiviert oder API-Key fehlt']);
+        }
+        if (!AiGenerate::consumeRateLimit($this->user)) {
+            $this->sendJson(['error' => rex_i18n::rawMsg('filepond_ai_rate_limited')], '429 Too Many Requests');
         }
 
         $generator = new AltTextGenerator();

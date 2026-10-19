@@ -16,7 +16,8 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
     private array $storedFiles = [];
 
     /**
-     * Ordnet einen Original-Dateinamen der neuesten Medienpool-Datei mit diesem Originalnamen zu.
+     * Ordnet einen Original-Dateinamen der neuesten Medienpool-Datei mit diesem Originalnamen zu
+     * (nur noch im Backend, siehe sanitizeValue()).
      */
     protected static function getMediapoolFilename(string $originalFilename): string
     {
@@ -27,20 +28,36 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
     }
 
     /**
-     * Nur echte Medienpool-Dateinamen übernehmen: der Wert kommt vom Client und landet in
-     * Mail-Anhängen und Pfaden.
+     * Nur echte Medienpool-Dateinamen übernehmen, die der Absender verwenden darf: der Wert kommt
+     * vom Client und landet in Datensätzen, Mail-Anhängen und im Auto-Cleanup.
+     *
+     * - Dateien, die schon im gespeicherten Datensatz stehen, und eigene Uploads dieser Session
+     * - im Backend zusätzlich Dateien aus Medienkategorien, für die der Benutzer Rechte hat
      */
-    protected static function sanitizeValue(string $value): string
+    protected function sanitizeValue(string $value): string
     {
+        $isBackend = rex::isBackend();
+        $user = $isBackend ? rex::getUser() : null;
+        $ownUploads = self::sessionUploads();
+
         $files = [];
         foreach (explode(',', self::cleanValue($value)) as $name) {
             if ('' === $name || basename($name) !== $name) {
                 continue;
             }
-            if (null === rex_media::get($name)) {
+            // Zuordnung über den Originalnamen nur im Backend (Altbestand), im Frontend würde sie fremde Dateien finden
+            if (null !== $user && null === rex_media::get($name)) {
                 $name = self::getMediapoolFilename($name);
             }
-            if (null !== rex_media::get($name) && !in_array($name, $files, true)) {
+            $media = rex_media::get($name);
+            if (null === $media || in_array($name, $files, true)) {
+                continue;
+            }
+
+            $allowed = in_array($name, $this->storedFiles, true)
+                || in_array($name, $ownUploads, true)
+                || (null !== $user && (bool) $user->getComplexPerm('media')?->hasCategoryPerm($media->getCategoryId()));
+            if ($allowed) {
                 $files[] = $name;
             }
         }
@@ -48,10 +65,35 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
         return implode(',', $files);
     }
 
+    /**
+     * Eigene Uploads der Session (Upload-API merkt sie sich unter 'filepond_uploads').
+     *
+     * @return list<string>
+     */
+    protected static function sessionUploads(): array
+    {
+        if (PHP_SESSION_ACTIVE !== session_status()) {
+            if (headers_sent()) {
+                return [];
+            }
+            rex_login::startSession();
+        }
+
+        return array_values(array_filter(rex_session('filepond_uploads', 'array', []), 'is_string'));
+    }
+
+    /** Höchstzahl der Dateien laut Feld bzw. Einstellungen, 0 = unbegrenzt. */
+    protected function maxFiles(): int
+    {
+        $raw = (string) $this->getElement('allowed_max_files');
+
+        return max(0, is_numeric($raw) ? (int) $raw : Config::int('max_files', 30));
+    }
+
     public function preValidateAction(): void
     {
         $this->storedFiles = [];
-        if (!$this->params['send'] || (int) ($this->params['main_id'] ?? 0) <= 0) {
+        if ((int) ($this->params['main_id'] ?? 0) <= 0 || '' === (string) ($this->params['main_table'] ?? '')) {
             return;
         }
 
@@ -131,7 +173,14 @@ class rex_yform_value_filepond extends rex_yform_value_abstract
                 $this->params['warning_messages'][$this->getId()] = implode(', ', $errors);
             }
 
-            $value = self::sanitizeValue($value);
+            $value = $this->sanitizeValue($value);
+
+            // Höchstzahl serverseitig durchsetzen (im Browser nur Komfort)
+            $maxFiles = $this->maxFiles();
+            if ($maxFiles > 0 && count(array_filter(explode(',', $value))) > $maxFiles) {
+                $this->params['warning'][$this->getId()] = $this->params['error_class'];
+                $this->params['warning_messages'][$this->getId()] = rex_i18n::msg('filepond_yform_max_files_exceeded', (string) $maxFiles);
+            }
 
             $this->setValue($value);
 

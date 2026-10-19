@@ -180,7 +180,25 @@ echo Helper::getStyles();
 
 `widgetSecurityAttributes()` gibt den CSRF-Token und die Signatur über Kategorie, Typen und Größe aus. Die Werte müssen zu `data-filepond-cat`, `types` und `maxsize` passen; der Server übernimmt nur signierte Werte. Ein vollständiges Beispiel liegt in `demo/frontend_demo.php`.
 
+Die Signatur gilt rund 24 Stunden und nur in der Session, in der die Seite ausgegeben wurde. Jede Seitenausgabe erzeugt eine neue. Seiten mit Upload-Widget deshalb nicht länger als ein paar Stunden im Seiten-Cache halten; nach Ablauf oder einem Session-Wechsel (z. B. Login) hilft Neuladen. Ein optionaler vierter Parameter bindet die Signatur an einen Einsatzort, `'ycom'` (oder `'ycom:…'`) erlaubt Uploads dann nur angemeldeten YCom-Nutzern:
+
+```php
+<?= Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb, 'ycom:profilbild') ?>
+```
+
+Eigene Upload-Skripte (statt `filepond_widget.js`) schicken neben `category_sig`, `policy_types` und `policy_maxsize` auch `policy_expires` und `policy_context` aus den Attributen `data-filepond-policy-expires` und `data-filepond-policy-context` mit.
+
 In YForm-Formularen im Frontend setzt der Feldtyp `filepond` (Template `bootstrap`) alle Attribute selbst; `getStyles()`/`getScripts()` und – für Gäste – den Token in der Session wie oben ergänzen. KI-Vorschläge stehen im Frontend nicht zur Verfügung.
+
+Beim Absenden übernimmt das Feld im Frontend nur Dateien, die schon im gespeicherten Datensatz stehen oder in derselben Session hochgeladen wurden; andere Dateinamen werden verworfen. Die Höchstzahl der Dateien (`allowed_max_files`) prüft der Server. Im Backend sind zusätzlich Dateien aus Medienkategorien erlaubt, für die der Benutzer Rechte hat.
+
+Metadaten aus Frontend-Uploads werden nur für Titel, Alt-Text, Copyright, Beschreibung und die Pflichtfelder aus den Einstellungen gespeichert (ausgeblendete Felder nie). Weitere Felder lassen sich über den Extension Point `FILEPOND_FRONTEND_METADATA_FIELDS` freigeben:
+
+```php
+rex_extension::register('FILEPOND_FRONTEND_METADATA_FIELDS', static function (rex_extension_point $ep) {
+    return [...$ep->getSubject(), 'med_fotograf'];
+});
+```
 
 Die Upload-Anfragen gehen an die aktuelle Seiten-URL, REDAXO verarbeitet `rex-api-call` dort.
 
@@ -266,7 +284,12 @@ Sicherheitsattribute (`data-filepond-csrf`, `data-filepond-cat-sig`, `data-filep
 - **Backend:** Upload nur in Kategorien mit Rechten, Löschen nur eigener Uploads oder mit Kategorierecht.
 - **Frontend:** nur YCom-User oder Session mit API-Token; Kategorie, Typen und Größe sind signiert und werden serverseitig geprüft; löschen lassen sich nur die eigenen Uploads der Session.
 - Dateityp wird am Inhalt geprüft (nicht an Endung oder Browserangabe), dazu die Medienpool-Regeln für erlaubte Endungen.
-- Chunks und Metadaten eines Uploads gehören der Session, die ihn vorbereitet hat.
+- Chunks und Metadaten eines Uploads gehören der Session, die ihn vorbereitet hat. Größe, Chunk-Anzahl und Feldgrenzen werden schon beim Empfang jedes Chunks geprüft; pro Session sind höchstens 20 Uploads gleichzeitig offen.
+- Ohne Feldgrenzen gelten die erlaubten Dateitypen aus den Einstellungen, auch für externe Clients.
+- Bei wenig freiem Speicherplatz werden Uploads abgelehnt: frei bleiben müssen mindestens die doppelte Maximalgröße bzw. der Wert der Einstellung `min_free_disk_mb` (nur per `rex_config::set('filepond_uploader', 'min_free_disk_mb', 2048)`). Reste abgebrochener Uploads werden nach 2 Stunden gelöscht.
+- Signaturen nutzen einen eigenen Schlüssel (nicht den API-Token), gelten rund 24 Stunden und nur in der ausgebenden Session.
+- **Alt-Text-Checker** zeigt und bearbeitet nur Bilder aus Medienkategorien mit Rechten. **KI-Vorschläge** brauchen das Recht `filepond_uploader[upload]` oder `filepond_uploader[alt_checker]` (Admins immer) und Rechte an der Kategorie der Datei; pro Benutzer sind 100 Anfragen in 10 Minuten möglich (`ai_rate_limit`).
+- Bilder über 50 Megapixel verarbeitet die serverseitige Bildoptimierung mit GD nicht (bleiben unverändert).
 - **Externe Clients** ohne Session authentifizieren sich mit dem Parameter `api_token` (Einstellungen → System). Den Token wie ein Passwort behandeln.
 
 ## PHP-API und Klassen
@@ -277,7 +300,7 @@ use FriendsOfRedaxo\FilePondUploader\Helper;
 Helper::getStyles();                 // Frontend: <link>-Tags, Backend: per rex_view
 Helper::getScripts();                // Frontend: <script>-Tags, Backend: per rex_view
 Helper::configAttributes([...]);     // data-filepond-* aus den Einstellungen
-Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb);
+Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb, $context = '');
 ```
 
 | Klasse | Zweck | Alias bis 2.x |
@@ -291,6 +314,8 @@ Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb);
 | `…\Api\AutoMetainfo`, `…\Api\AiGenerate`, `…\Api\AltChecker`, `…\Api\YcomAuth` | weitere APIs | `rex_api_filepond_*` |
 
 Die APIs sind nach [REDAXO-Doku](https://redaxo.org/doku/5.x/api#namespace-registrierung) registriert (`rex-api-call=filepond_uploader` usw.).
+
+Extension Point `FILEPOND_FRONTEND_METADATA_FIELDS`: Liste der Metadatenfelder, die Frontend-Uploads setzen dürfen (siehe [Im Frontend](#im-frontend)).
 
 Extension Point `MEDIA_IS_IN_USE`: Dateien, die in einem FilePond-YForm-Feld stecken, gelten als verwendet und lassen sich im Medienpool nicht löschen.
 

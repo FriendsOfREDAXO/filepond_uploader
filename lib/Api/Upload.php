@@ -40,7 +40,23 @@ class Upload extends rex_api_function
 {
     use AuthorizesRequests;
 
-    private const MAX_CHUNKS = 100000;
+    /** Obergrenze für Chunks pro Datei; zusätzlich begrenzt durch Maximalgröße / MIN_CHUNK_BYTES. */
+    private const MAX_CHUNKS = 10000;
+
+    /** Kleinste sinnvolle Chunk-Größe (Chunk-Größe ist in ganzen MB einstellbar). */
+    private const MIN_CHUNK_BYTES = 256 * 1024;
+
+    /** Gleichzeitig offene (vorbereitete) Uploads pro Session. */
+    private const MAX_OPEN_UPLOADS = 20;
+
+    /** Offene Uploads einer Session dürfen zusammen höchstens so viele Maximalgrößen belegen. */
+    private const MAX_OPEN_BYTES_FACTOR = 4;
+
+    /** Größte Metadaten eines Uploads (JSON aus dem Dialog) in Byte. */
+    private const MAX_METADATA_BYTES = 65536;
+
+    /** Größte Bildfläche, die GD serverseitig verarbeitet (Megapixel); größere Bilder bleiben unverändert. */
+    private const GD_MAX_MEGAPIXEL = 50;
 
     protected $published = true;
     protected string $chunksDir = '';
@@ -138,16 +154,24 @@ class Upload extends rex_api_function
         // Hier werden Metadaten gespeichert und ein eindeutiger fileId zurückgegeben
 
         self::collectGarbage();
+        $this->ensureDiskSpace();
+        $this->ensureOpenUploadLimit();
 
-        $fileId = uniqid('filepond_', true);
-        $this->rememberPrepared($fileId);
-        $metadata = json_decode(rex_post('metadata', 'string', '{}'), true);
+        $metadataRaw = rex_post('metadata', 'string', '{}');
+        if (strlen($metadataRaw) > self::MAX_METADATA_BYTES) {
+            throw new rex_api_exception('Metadata too large');
+        }
+        $metadata = json_decode($metadataRaw, true);
+        $metadata = is_array($metadata) ? $metadata : [];
         $fileName = rex_request('fileName', 'string', '');
         $fieldName = rex_request('fieldName', 'string', 'filepond');
 
         if ('' === $fileName) {
             throw new rex_api_exception('Missing filename');
         }
+
+        $fileId = uniqid('filepond_', true);
+        $this->rememberPrepared($fileId);
 
         // Speichere den originalen Dateinamen für später
         $originalFileName = $fileName;
@@ -158,7 +182,8 @@ class Upload extends rex_api_function
 
         // Verzeichnis für Metadaten sicherstellen
         if (!rex_dir::create($this->metadataDir)) {
-            throw new rex_api_exception("Failed to create metadata directory: {$this->metadataDir}");
+            rex_logger::factory()->error('FilePond: Metadaten-Verzeichnis konnte nicht angelegt werden');
+            throw new rex_api_exception('Upload failed');
         }
 
         // Metadaten speichern
@@ -172,7 +197,8 @@ class Upload extends rex_api_function
         ];
 
         if (!rex_file::put($metaFile, (string) json_encode($metaData))) {
-            throw new rex_api_exception("Failed to write metadata file: $metaFile");
+            rex_logger::factory()->error('FilePond: Metadaten-Datei konnte nicht geschrieben werden');
+            throw new rex_api_exception('Upload failed');
         }
 
         // Erfolg zurückgeben
@@ -204,6 +230,8 @@ class Upload extends rex_api_function
 
     /**
      * Speichert einen einzelnen Chunk. Zusammengeführt wird erst in handleFinalizeUpload().
+     * Größe, Chunk-Anzahl und Feldgrenzen werden schon hier geprüft, damit abgelehnte Uploads
+     * keinen Speicherplatz belegen.
      *
      * @return never
      */
@@ -212,11 +240,32 @@ class Upload extends rex_api_function
         $fileId = $this->requireFileId();
         $chunkIndex = rex_request('chunkIndex', 'int', -1);
         $totalChunks = rex_request('totalChunks', 'int', 0);
-        if ($totalChunks < 1 || $totalChunks > self::MAX_CHUNKS || $chunkIndex < 0 || $chunkIndex >= $totalChunks) {
+
+        $metaFile = $this->metadataDir . '/' . $fileId . '.json';
+        $metaData = is_file($metaFile) ? json_decode((string) rex_file::get($metaFile), true) : null;
+        if (!is_array($metaData)) {
+            throw new rex_api_exception('Upload was not prepared');
+        }
+
+        // Kategorie und Feldgrenzen wie beim Abschluss, die Maximalgröße gilt ab dem ersten Chunk
+        $categoryId = $this->checkCategory(rex_request('category_id', 'int', 0));
+        $maxSize = $this->maxFilesize();
+        $maxChunks = min(self::MAX_CHUNKS, intdiv($maxSize, self::MIN_CHUNK_BYTES) + 1);
+        if ($totalChunks < 1 || $totalChunks > $maxChunks || $chunkIndex < 0 || $chunkIndex >= $totalChunks) {
             throw new rex_api_exception('Invalid chunk index');
         }
-        if (!is_file($this->metadataDir . '/' . $fileId . '.json')) {
-            throw new rex_api_exception('Upload was not prepared');
+
+        // Chunk-Anzahl und Upload-Regeln aus dem ersten Chunk festhalten, spätere Abweichungen ablehnen
+        $policy = $this->chunkPolicyKey($categoryId);
+        if (isset($metaData['chunks'])) {
+            if (!is_array($metaData['chunks']) || ($metaData['chunks']['total'] ?? null) !== $totalChunks || ($metaData['chunks']['policy'] ?? null) !== $policy) {
+                throw new rex_api_exception('Invalid chunk index');
+            }
+        } else {
+            $metaData['chunks'] = ['total' => $totalChunks, 'policy' => $policy];
+            if (!rex_file::put($metaFile, (string) json_encode($metaData))) {
+                throw new rex_api_exception('Upload failed');
+            }
         }
 
         $file = rex_request::files(rex_request('fieldName', 'string', 'filepond'), 'array', []);
@@ -224,16 +273,107 @@ class Upload extends rex_api_function
             throw new rex_api_exception('No file chunk uploaded');
         }
 
+        $chunkSize = (int) filesize($file['tmp_name']);
         $chunkDir = $this->chunksDir . '/' . $fileId;
+        // Alle Chunks vor dem letzten sind gleich groß: deren Ende darf die Maximalgröße nicht überschreiten
+        $isLast = $chunkIndex === $totalChunks - 1;
+        if ($chunkSize > $maxSize
+            || (!$isLast && ($chunkIndex + 1) * $chunkSize > $maxSize)
+            || self::directorySize($chunkDir, (string) $chunkIndex) + $chunkSize > $maxSize) {
+            // Zu große Uploads sofort verwerfen, nicht erst beim Aufräumen
+            rex_dir::delete($chunkDir);
+            rex_file::delete($metaFile);
+            throw new rex_api_exception('File too large');
+        }
+        if ('token' !== $this->caller && $this->openUploadBytes() + $chunkSize > $maxSize * self::MAX_OPEN_BYTES_FACTOR) {
+            throw new rex_api_exception('Too many uploads in progress');
+        }
+        $this->ensureDiskSpace();
+
         if (!rex_dir::create($chunkDir) || !move_uploaded_file($file['tmp_name'], $chunkDir . '/' . $chunkIndex)) {
             throw new rex_api_exception('Could not store chunk');
         }
+        // Laufende Uploads gelten nicht als verwaist
+        @touch($metaFile);
 
         $this->sendResponse([
             'status' => 'chunk-success',
             'chunkIndex' => $chunkIndex,
             'remaining' => $totalChunks - $chunkIndex - 1,
         ]);
+    }
+
+    /** Kennung der Upload-Regeln (Kategorie, Feldgrenzen, Aufrufer), an die ein Chunk-Upload gebunden ist. */
+    protected function chunkPolicyKey(int $categoryId): string
+    {
+        return hash('sha256', implode('|', [$this->caller, $categoryId, $this->policyTypes, $this->policyMaxFilesizeMb]));
+    }
+
+    /** Summe der Dateigrößen in einem Ordner, optional ohne eine Datei. */
+    protected static function directorySize(string $dir, string $except = ''): int
+    {
+        $size = 0;
+        foreach (glob($dir . '/*') ?: [] as $file) {
+            if (basename($file) !== $except && is_file($file)) {
+                $size += (int) filesize($file);
+            }
+        }
+
+        return $size;
+    }
+
+    /** Belegter Platz aller offenen Chunk-Uploads der Session. */
+    protected function openUploadBytes(): int
+    {
+        $bytes = 0;
+        foreach ($this->preparedInSession() as $fileId) {
+            if (Helper::isValidFileId($fileId)) {
+                $bytes += self::directorySize($this->chunksDir . '/' . $fileId);
+            }
+        }
+
+        return $bytes;
+    }
+
+    /** Begrenzt die gleichzeitig offenen Uploads einer Session (API-Token-Clients haben keine). */
+    protected function ensureOpenUploadLimit(): void
+    {
+        if ('token' === $this->caller) {
+            return;
+        }
+
+        $open = 0;
+        $since = time() - 3600;
+        foreach ($this->preparedInSession() as $fileId) {
+            $metaFile = $this->metadataDir . '/' . $fileId . '.json';
+            if (Helper::isValidFileId($fileId) && is_file($metaFile) && (int) @filemtime($metaFile) > $since) {
+                ++$open;
+            }
+        }
+        if ($open >= self::MAX_OPEN_UPLOADS) {
+            throw new rex_api_exception('Too many uploads in progress');
+        }
+    }
+
+    /**
+     * Lehnt Uploads ab, wenn der freie Speicher knapp wird: mindestens die doppelte Maximalgröße
+     * bzw. die Einstellung `min_free_disk_mb` muss frei bleiben.
+     */
+    protected function ensureDiskSpace(): void
+    {
+        if (!function_exists('disk_free_space')) {
+            return;
+        }
+        $free = @disk_free_space($this->chunksDir);
+        if (false === $free) {
+            return;
+        }
+
+        $required = max(2 * $this->maxFilesize(), Config::int('min_free_disk_mb', 0) * 1024 * 1024);
+        if ($free < $required) {
+            rex_logger::factory()->warning('FilePond: Upload abgelehnt, zu wenig freier Speicherplatz');
+            throw new rex_api_exception('Not enough disk space');
+        }
     }
 
     /**
@@ -410,6 +550,14 @@ class Upload extends rex_api_function
             throw new rex_api_exception('File type not allowed');
         }
 
+        // Ohne Feldgrenzen gelten die erlaubten Dateitypen aus den Einstellungen (Ersetzen im
+        // Medienpool behält ohnehin den Typ der vorhandenen Datei)
+        $globalTypes = Config::string('allowed_types');
+        if ('' === $this->policyTypes && $replaceFileId <= 0 && '' !== $globalTypes && !Helper::isTypeAllowed($globalTypes, $file['name'], $file['type'])) {
+            $this->log('error', "File type not allowed by settings: {$file['type']}");
+            throw new rex_api_exception('File type not allowed');
+        }
+
         if ($replaceFileId > 0) {
             return $this->replaceExistingMediaFile($replaceFileId, $file);
         }
@@ -445,7 +593,7 @@ class Upload extends rex_api_function
             $result = rex_media_service::addMedia($data, true);
             if ($result['ok']) {
                 if (!$skipMeta && [] !== $metadata) {
-                    MetadataWriter::apply($result['filename'], $metadata);
+                    MetadataWriter::apply($result['filename'], $metadata, 'frontend' === $this->caller);
                 }
 
                 $this->applyYcomMediaAuthDefaults($result['filename']);
@@ -477,7 +625,7 @@ class Upload extends rex_api_function
 
         $user = rex::getUser();
         if (!$user || !$user->getComplexPerm('media')->hasCategoryPerm($media->getCategoryId())) {
-            throw new rex_api_exception(rex_i18n::msg('no_permission'));
+            throw new rex_api_exception(rex_i18n::msg('filepond_no_permission'));
         }
 
         $data = [
@@ -666,6 +814,14 @@ class Upload extends rex_api_function
     /** GD-Fallback: Orientierung und Verkleinerung im Speicher, einmal speichern. */
     protected function processImageWithGD(string $tmpFile, int $maxPixel, int $quality, int $orientation, int $type): void
     {
+        // Sehr große Bilder nicht dekodieren (Speicherbedarf ca. 4–5 Byte je Pixel)
+        $size = @getimagesize($tmpFile);
+        if (false === $size || $size[0] * $size[1] > self::GD_MAX_MEGAPIXEL * 1000000) {
+            $this->log('warning', 'Image too large for GD processing, left unchanged');
+
+            return;
+        }
+
         $image = match ($type) {
             IMAGETYPE_JPEG => @imagecreatefromjpeg($tmpFile),
             IMAGETYPE_PNG => @imagecreatefrompng($tmpFile),
@@ -848,16 +1004,19 @@ class Upload extends rex_api_function
         return $removed;
     }
 
-    /** Automatisches Aufräumen, höchstens einmal pro Stunde; großzügige Frist für lange Uploads. */
+    /**
+     * Automatisches Aufräumen, höchstens alle 15 Minuten. Laufende Chunk-Uploads aktualisieren
+     * Ordner und Metadaten mit jedem Chunk, verwaist ist nur, was 2 Stunden unberührt blieb.
+     */
     protected static function collectGarbage(): void
     {
         $marker = rex_path::addonData('filepond_uploader', 'upload/.last-cleanup');
         $last = @filemtime($marker);
-        if (false !== $last && $last > time() - 3600) {
+        if (false !== $last && $last > time() - 900) {
             return;
         }
         rex_file::put($marker, '');
-        self::removeStaleTempFiles(6 * 3600);
+        self::removeStaleTempFiles(2 * 3600);
     }
 
     /**
@@ -869,9 +1028,6 @@ class Upload extends rex_api_function
     {
         $fileId = $this->requireFileId();
         $totalChunks = rex_request('totalChunks', 'int', 0);
-        if ($totalChunks < 1 || $totalChunks > self::MAX_CHUNKS) {
-            throw new rex_api_exception('Invalid chunk count');
-        }
 
         $metaFile = $this->metadataDir . '/' . $fileId . '.json';
         $chunkDir = $this->chunksDir . '/' . $fileId;
@@ -881,6 +1037,11 @@ class Upload extends rex_api_function
             $metaData = json_decode((string) rex_file::get($metaFile), true);
             if (!is_array($metaData) || !isset($metaData['fileName']) || !is_string($metaData['fileName'])) {
                 throw new rex_api_exception('Upload was not prepared');
+            }
+            // Gleiche Chunk-Anzahl und Upload-Regeln wie beim Hochladen der Chunks
+            $chunks = $metaData['chunks'] ?? null;
+            if (!is_array($chunks) || ($chunks['total'] ?? null) !== $totalChunks || ($chunks['policy'] ?? null) !== $this->chunkPolicyKey($categoryId)) {
+                throw new rex_api_exception('Invalid chunk count');
             }
 
             $maxSize = $this->maxFilesize();

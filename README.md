@@ -180,7 +180,25 @@ echo Helper::getStyles();
 
 `widgetSecurityAttributes()` outputs the CSRF token and a signature over category, types and size. The values must match `data-filepond-cat`, `types` and `maxsize`; the server only accepts signed values. A complete example is in `demo/frontend_demo.php`.
 
+The signature is valid for about 24 hours and only in the session the page was rendered in. Every page render creates a new one. Do not keep pages with an upload widget in a page cache for more than a few hours; after expiry or a session change (e.g. login) a reload helps. An optional fourth parameter binds the signature to a context; `'ycom'` (or `'ycom:…'`) then allows uploads only for logged-in YCom users:
+
+```php
+<?= Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb, 'ycom:avatar') ?>
+```
+
+Custom upload scripts (instead of `filepond_widget.js`) send `policy_expires` and `policy_context` from the attributes `data-filepond-policy-expires` and `data-filepond-policy-context` in addition to `category_sig`, `policy_types` and `policy_maxsize`.
+
 In frontend YForm forms the `filepond` field type (template `bootstrap`) sets all attributes itself; add `getStyles()`/`getScripts()` and – for guests – the session token as above. AI suggestions are not available in the frontend.
+
+On submit, the field in the frontend only accepts files that are already stored in the record or were uploaded in the same session; other file names are dropped. The server enforces the maximum number of files (`allowed_max_files`). In the backend, files from media categories the user has permissions for are accepted as well.
+
+Metadata from frontend uploads is only stored for title, alt text, copyright, description and the required fields from the settings (never for hidden fields). Further fields can be allowed via the extension point `FILEPOND_FRONTEND_METADATA_FIELDS`:
+
+```php
+rex_extension::register('FILEPOND_FRONTEND_METADATA_FIELDS', static function (rex_extension_point $ep) {
+    return [...$ep->getSubject(), 'med_photographer'];
+});
+```
 
 Upload requests go to the current page URL, where REDAXO handles `rex-api-call`.
 
@@ -266,7 +284,12 @@ The security attributes (`data-filepond-csrf`, `data-filepond-cat-sig`, `data-fi
 - **Backend:** uploads only into categories with permissions; deleting only own uploads or with category permission.
 - **Frontend:** only YCom users or a session with the API token; category, types and size are signed and checked on the server; only the session's own uploads can be deleted.
 - The file type is checked by content (not by extension or browser information), plus the media pool rules for allowed extensions.
-- Chunks and metadata of an upload belong to the session that prepared it.
+- Chunks and metadata of an upload belong to the session that prepared it. Size, chunk count and field limits are checked as each chunk arrives; at most 20 uploads per session can be open at the same time.
+- Without field limits, the allowed file types from the settings apply, also for external clients.
+- Uploads are refused when free disk space runs low: at least twice the maximum file size or the value of the setting `min_free_disk_mb` must remain free (only via `rex_config::set('filepond_uploader', 'min_free_disk_mb', 2048)`). Leftovers of cancelled uploads are removed after 2 hours.
+- Signatures use their own key (not the API token), are valid for about 24 hours and only in the session that rendered them.
+- The **alt text checker** only shows and edits images from media categories the user has permissions for. **AI suggestions** require the permission `filepond_uploader[upload]` or `filepond_uploader[alt_checker]` (admins always) and permissions for the file's category; each user can make 100 requests per 10 minutes (`ai_rate_limit`).
+- Images above 50 megapixels are not processed by the server-side image optimisation with GD (left unchanged).
 - **External clients** without a session authenticate with the `api_token` parameter (Settings → System). Treat the token like a password.
 
 ## PHP API and classes
@@ -277,7 +300,7 @@ use FriendsOfRedaxo\FilePondUploader\Helper;
 Helper::getStyles();                 // frontend: <link> tags, backend: via rex_view
 Helper::getScripts();                // frontend: <script> tags, backend: via rex_view
 Helper::configAttributes([...]);     // data-filepond-* from the settings
-Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb);
+Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb, $context = '');
 ```
 
 | Class | Purpose | Alias up to 2.x |
@@ -291,6 +314,8 @@ Helper::widgetSecurityAttributes($categoryId, $types, $maxSizeMb);
 | `…\Api\AutoMetainfo`, `…\Api\AiGenerate`, `…\Api\AltChecker`, `…\Api\YcomAuth` | further APIs | `rex_api_filepond_*` |
 
 The APIs are registered as described in the [REDAXO documentation](https://redaxo.org/doku/5.x/api#namespace-registrierung) (`rex-api-call=filepond_uploader` etc.).
+
+Extension point `FILEPOND_FRONTEND_METADATA_FIELDS`: list of metadata fields frontend uploads may set (see [In the frontend](#in-the-frontend)).
 
 Extension point `MEDIA_IS_IN_USE`: files used in a FilePond YForm field count as in use and cannot be deleted in the media pool.
 

@@ -12,7 +12,7 @@ use FriendsOfRedaxo\FilePondUploader\Helper;
 
 // Berechtigung prüfen
 if (!rex::getUser() || (!rex::getUser()->isAdmin() && !rex::getUser()->hasPerm('filepond_uploader[alt_checker]'))) {
-    echo rex_view::error(rex_i18n::msg('no_perm'));
+    echo rex_view::error(rex_i18n::msg('filepond_no_permission'));
     return;
 }
 
@@ -97,9 +97,12 @@ if (!empty($filterFilename)) {
 if ($filterCategory >= 0) {
     $filters['category_id'] = $filterCategory;
 }
+// Nur Kategorien mit Medienpool-Rechten
+$allowedCategoryIds = AltTextChecker::allowedCategoryIds(rex::getUser());
+$filters['category_ids'] = $allowedCategoryIds;
 
 // Statistik laden
-$stats = AltTextChecker::getStatistics();
+$stats = AltTextChecker::getStatistics($allowedCategoryIds);
 
 // Bilder laden
 $totalCount = 0;

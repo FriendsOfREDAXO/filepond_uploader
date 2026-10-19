@@ -42,6 +42,33 @@ final class Config
         return is_string($raw) && '' !== trim($raw) ? trim($raw) : $default;
     }
 
+    /**
+     * In den Einstellungen ausgeblendete Metadatenfelder ("|a|b|", JSON-Liste oder CSV).
+     *
+     * @return list<string>
+     */
+    public static function excludedMetadataFields(): array
+    {
+        $raw = rex_config::get(self::NS, 'excluded_metadata_fields', []);
+        if (is_string($raw)) {
+            $decoded = json_decode(trim($raw), true);
+            $raw = is_array($decoded) ? $decoded : (preg_split('/[|,]/', $raw) ?: []);
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $fields = [];
+        foreach ($raw as $field) {
+            $field = is_string($field) ? trim($field) : '';
+            if ('' !== $field && !in_array($field, $fields, true)) {
+                $fields[] = $field;
+            }
+        }
+
+        return $fields;
+    }
+
     /** Fallback-Sprache für KI-Alt-Texte, zweistelliger Code. */
     public static function aiFallbackLanguage(): string
     {

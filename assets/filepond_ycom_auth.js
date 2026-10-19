@@ -31,6 +31,7 @@
 
     function buildFormData() {
         var fd = new FormData();
+        fd.append('_csrf_token', (window.rex && window.rex.filepond_csrf) || '');
         fd.append('ycom_auth_type', getValue('filepond-ycom-auth-type') || '0');
         fd.append('ycom_group_type', getValue('filepond-ycom-group-type') || '0');
         getMultiValues('filepond-ycom-groups').forEach(function (v) {
