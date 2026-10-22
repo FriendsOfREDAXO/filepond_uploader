@@ -113,6 +113,12 @@
             return;
         }
 
+        // Nur Textfelder: der Praefix-Selektor "med_alt_" trifft sonst auch
+        // Checkboxen wie MediaPlace's "med_alt_decorative" (Issue #118).
+        if ($input.is('input') && !$input.is('input[type="text"], input:not([type])')) {
+            return;
+        }
+
         // Wenn das Feld innerhalb eines metainfo_lang_fields Containers liegt,
         // dort wird ein separater "alle Sprachen"-Button angehängt.
         if ($input.closest('.meta_lang_field_all, .meta_lang_field').length > 0) {
