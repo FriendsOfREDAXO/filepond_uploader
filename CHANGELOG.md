@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.1.1 (2026-10-22)
+
+### 🐛 Fehlerbehebungen
+- **KI-Alt-Text-Button**: erschien auch neben Checkboxen, deren Name mit dem Alt-Feld beginnt, z. B. MediaPlace's „Dekoratives Bild“ (`med_alt_decorative`). Der Button hängt jetzt nur noch an Textfeldern ([#118](https://github.com/FriendsOfREDAXO/filepond_uploader/issues/118)).
+
 ## 3.1.0 (2026-10-19)
 
 Sicherheits-Update. Die Version springt auf 3.1.0, weil sich für Integratoren einiges ändert (siehe „Geänderte Abläufe“); wer nur das YForm-Feld und die mitgelieferten Widgets nutzt, muss nichts anpassen.
