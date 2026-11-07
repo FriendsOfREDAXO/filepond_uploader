@@ -554,8 +554,31 @@
                 return metaInfoFieldsPromise;
             };
             
+            // Metainfo-Checkbox „Dekoratives Bild“ (z. B. von MediaPlace): gemeinsame Quelle für „dekorativ“
+            const DECORATIVE_FIELD = 'med_alt_decorative';
+            let dialogFieldNames = [];
+            const isCheckedValue = (value) => {
+                if (value === true) return true;
+                const v = String(value ?? '').replace(/^\|+|\|+$/g, '').trim().toLowerCase();
+                return v !== '' && !['0', 'false', 'off', 'no'].includes(v);
+            };
+            // Checkbox „Dekoratives Bild“ am Alt-Feld: wenn Alt-Text Pflicht ist oder das Metainfo-Feld existiert
+            const showDecorativeCheckbox = (isImage) => isImage && (altRequiredByDefault || dialogFieldNames.includes(DECORATIVE_FIELD));
+            const decorativeCheckboxHTML = (existingMetadata, modalId) => {
+                const checkboxId = `decorative_global_${esc(modalId || 'dialog')}`;
+                const checked = isCheckedValue(existingMetadata?.[DECORATIVE_FIELD]) ? ' checked' : '';
+                let html = `<div class="decorative-checkbox-group">`;
+                html += `<label for="${checkboxId}" class="simple-modal-checkbox-label">`;
+                html += `<input type="checkbox" id="${checkboxId}" class="decorative-checkbox-global"${checked}> `;
+                html += esc(t.decorativeLabel);
+                html += `</label>`;
+                html += `</div>`;
+                return html;
+            };
+
             // Erweiterte MetaInfo-Dialog
             const createEnhancedMetadataDialog = (file, existingMetadata, fields, originalFileName = null) => {
+                dialogFieldNames = (fields || []).map(f => f.name);
                 return new Promise((resolve, reject) => {
                     // Generiere eindeutige Modal-ID für diese Instanz
                     const modalId = 'modal_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -702,6 +725,23 @@
                 if (field.name === 'med_alt' && !isImage) {
                     return '';
                 }
+
+                // „Dekoratives Bild“ nur bei Bildern; mit Alt-Feld zusammen als Schalter am Alt-Feld
+                if (field.name === DECORATIVE_FIELD && (!isImage || dialogFieldNames.includes('med_alt'))) {
+                    return '';
+                }
+
+                // Metainfo-Checkbox (gespeichert wie im Medienpool: "|1|" oder leer)
+                if (field.type === 'checkbox') {
+                    const checked = isCheckedValue(existingMetadata?.[field.name]) ? ' checked' : '';
+                    const label = esc(getFieldTranslation(field.name) || (field.name === DECORATIVE_FIELD ? t.decorativeLabel : field.label));
+                    html += `<div class="simple-modal-form-group" data-field-group="${fieldName}">`;
+                    html += `<label for="${fieldId}_${esc(modalId || 'dialog')}" class="simple-modal-checkbox-label">`;
+                    html += `<input type="checkbox" id="${fieldId}_${esc(modalId || 'dialog')}" data-field="${fieldName}" data-checkbox="true"${checked}> ${label}`;
+                    html += `</label>`;
+                    html += `</div>`;
+                    return html;
+                }
                 
                 // Übersetztes Label verwenden
                 const translatedLabel = esc(getFieldTranslation(field.name) || field.label);
@@ -716,14 +756,8 @@
                     html += `<div style="margin-bottom:6px;">${getAiMagicButtonMarkup(field.name, isImage)}</div>`;
                     
                     // Globale dekorative Checkbox für ALT-Felder bei Bildern
-                    if (field.name === 'med_alt' && isImage && altRequiredByDefault) {
-                        const decorativeCheckboxId = `decorative_global`;
-                        html += `<div class="decorative-checkbox-group">`;
-                        html += `<label for="${decorativeCheckboxId}" class="simple-modal-checkbox-label">`;
-                        html += `<input type="checkbox" id="${decorativeCheckboxId}" class="decorative-checkbox-global">`;
-                        html += esc(t.decorativeLabel);
-                        html += `</label>`;
-                        html += `</div>`;
+                    if (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) {
+                        html += decorativeCheckboxHTML(existingMetadata, modalId);
                     }
                     
                     // Tabs Container
@@ -792,8 +826,11 @@
                     html += `</label>`;
                     html += `<div style="margin-bottom:6px;">${getAiMagicButtonMarkup(field.name, isImage)}</div>`;
                     
-                    // Globale dekorative Checkbox wird nur einmal angezeigt (bei mehrsprachigen Feldern)
-                    
+                    // Dekorative Checkbox auch beim einsprachigen Alt-Feld
+                    if (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) {
+                        html += decorativeCheckboxHTML(existingMetadata, modalId);
+                    }
+
                     const fieldValue = esc(existingMetadata?.[field.name] || '');
                     
                     // Required-Attribut für verschiedene Felder
@@ -881,23 +918,27 @@
                 // Globale dekorative Bild-Checkbox für ALT-Felder
                 const globalDecorativeCheckbox = form.querySelector('.decorative-checkbox-global');
                 if (globalDecorativeCheckbox) {
-                    globalDecorativeCheckbox.addEventListener('change', function() {
-                        const isChecked = this.checked;
-                        
+                    const applyDecorative = (isChecked) => {
                         // Alle ALT-Felder (mehrsprachig und einsprachig) finden und entsprechend aktivieren/deaktivieren
-                        const altFields = form.querySelectorAll('[data-field="med_alt"]');
-                        
-                        altFields.forEach(field => {
+                        form.querySelectorAll('[data-field="med_alt"]').forEach(field => {
                             if (isChecked) {
                                 field.disabled = true;
                                 field.value = '';
                                 field.removeAttribute('required');
                             } else {
                                 field.disabled = false;
-                                field.setAttribute('required', 'required');
+                                if (altRequiredByDefault) {
+                                    field.setAttribute('required', 'required');
+                                }
                             }
                         });
+                    };
+                    globalDecorativeCheckbox.addEventListener('change', function() {
+                        applyDecorative(this.checked);
                     });
+                    if (globalDecorativeCheckbox.checked) {
+                        applyDecorative(true);
+                    }
                 }
 
                 // AI-Zauberbutton für das konfigurierte Zielfeld
@@ -1180,6 +1221,11 @@
                     const fieldName = input.getAttribute('data-field');
                     const langCode = input.getAttribute('data-lang');
                     
+                    if (fieldName && input.dataset.checkbox === 'true') {
+                        metadata[fieldName] = input.checked ? '|1|' : '';
+                        return;
+                    }
+
                     if (fieldName) {
                         if (langCode) {
                             // Mehrsprachiges Feld
@@ -1191,7 +1237,16 @@
                         }
                     }
                 });
-                
+
+                // Schalter „Dekoratives Bild“ am Alt-Feld
+                const decorativeSwitch = form.querySelector('.decorative-checkbox-global');
+                if (decorativeSwitch) {
+                    metadata.decorative = decorativeSwitch.checked;
+                    if (dialogFieldNames.includes(DECORATIVE_FIELD)) {
+                        metadata[DECORATIVE_FIELD] = decorativeSwitch.checked ? '|1|' : '';
+                    }
+                }
+
                 return metadata;
             };
             
@@ -1208,6 +1263,9 @@
                 });
                 
                 for (const field of fields) {
+                    if (field.type === 'checkbox') {
+                        continue;
+                    }
                     let isFieldRequired = field.required;
                     
                     // ALT-Felder sind bei Bildern optional/required je nach Konfiguration

@@ -235,7 +235,7 @@ Without a custom prompt the selected prompt profile is used (accessible, neutral
 
 - statistics on images with and without alt text
 - enter alt texts directly in the list, also multilingual; Enter saves, "Save all" saves all changes
-- mark images as decorative (counted as done)
+- mark images as decorative (counted as done); with the meta info checkbox `med_alt_decorative` (e.g. created by MediaPlace) the mark is stored there, so media pool, MediaPlace and frontend output see the same value
 - filter by file name and category, large preview
 - AI suggestions per image or for all visible images
 
@@ -247,7 +247,8 @@ The dialog shows the media pool's meta info fields, ordered `title`, `med_title_
 
 - `title`: optionally required (setting or `data-filepond-title-required`)
 - `med_title_lang`: always required
-- `med_alt`: required for images by default, alternatively "decorative image"
+- `med_alt`: required for images by default, alternatively "decorative image". The checkbox is shown next to the alt field (single and multilingual); if the meta info checkbox `med_alt_decorative` exists, it is shown even when alt text is not required, and the value is saved there.
+- Meta info checkboxes with one option are shown as checkboxes. Field types the dialog cannot edit (media/link widgets, selects, dates, JSON fields of other addons such as MediaPlace's `med_json_data`) are not shown and not written.
 
 Further required and hidden fields can be set under Settings → Metadata.
 

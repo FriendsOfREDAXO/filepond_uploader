@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.1.2 (2026-11-07)
+
+### 🐛 Fehlerbehebungen
+- **Dekoratives Bild**: Bei einsprachigem Alt-Feld fehlte die Checkbox „Dekoratives Bild“ im Upload-Dialog, obwohl der Alt-Text Pflicht war – dekorative Bilder ließen sich so nur mit Alt-Text hochladen. Die Checkbox steht jetzt auch dort.
+- **Dekorativ wurde nicht gespeichert**: Der Dialog hat den Zustand nie an den Server übermittelt, und die MetaInfo-Checkbox `med_alt_decorative` (z. B. von MediaPlace) erschien als Textfeld. Jetzt wird „dekorativ“ in `med_alt_decorative` gespeichert (im Format der Metainfo-Checkbox, ohne Optionen `|true|`), der Alt-Text geleert; die Checkbox erscheint auch ohne Alt-Pflicht, sobald das Feld existiert.
+- **Alt-Text-Checker** erkennt dekorative Bilder auch über `med_alt_decorative`; „Als dekorativ markieren“ und „Markierung aufheben“ setzen bzw. löschen das Feld, wenn es existiert (sonst wie bisher die eigene Liste).
+- **MetaInfo-Checkboxen** mit einer Option erscheinen im Dialog als Checkbox und werden mit dem Wert gespeichert, den der Medienpool erwartet.
+
+### 🔒 Sicherheit / Robustheit
+- Der Dialog bietet nur noch Feldtypen an, die er bearbeiten kann (Text, Textarea, Checkbox, mehrsprachige Textfelder), und schreibt nur diese. Medien-/Link-Widgets, Auswahllisten, Datumsfelder, Fokuspunkt oder JSON-Felder anderer AddOns (z. B. MediaPlace' `med_json_data`) erschienen bisher als Textfeld und konnten beim Upload überschrieben werden.
+
 ## 3.1.1 (2026-10-22)
 
 ### 🐛 Fehlerbehebungen

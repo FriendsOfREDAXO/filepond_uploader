@@ -223,6 +223,10 @@ class AutoMetainfo extends rex_api_function
                     $name = (string) ($row->getValue('name') ?? '');
                     $title = (string) ($row->getValue('title') ?? '');
                     $typeLabel = (string) ($row->getValue('type_label') ?? '');
+                    // Nur Typen, die der Dialog bearbeiten kann (keine Medien-Widgets, JSON-Felder anderer AddOns usw.)
+                    if (!MetadataWriter::isSupportedField($name, $typeLabel)) {
+                        continue;
+                    }
                     if (!in_array($name, $excludedFields, true)) {
                         $fields[] = $this->analyzeField($name, $title, $typeLabel);
                     }
@@ -406,6 +410,10 @@ class AutoMetainfo extends rex_api_function
 
         if ('' !== $metainfoTypeLabel && str_contains($metainfoTypeLabel, 'textarea')) {
             return 'textarea';
+        }
+
+        if ('checkbox' === strtolower($metainfoTypeLabel)) {
+            return 'checkbox';
         }
 
         if ('' !== $metainfoTypeLabel) {

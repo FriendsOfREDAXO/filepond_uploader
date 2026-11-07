@@ -430,10 +430,15 @@ class AltTextChecker
                 return ['success' => false, 'error' => 'Medium nicht gefunden'];
             }
 
-            $decorativeList = self::getDecorativeList();
-            if (!in_array($filename, $decorativeList, true)) {
-                $decorativeList[] = $filename;
-                rex_config::set('filepond_uploader', 'decorative_images', json_encode($decorativeList));
+            if (DecorativeField::exists()) {
+                // Metainfo-Checkbox ist die gemeinsame Quelle (Medienpool, MediaPlace, Frontend)
+                DecorativeField::set($filename, true);
+            } else {
+                $decorativeList = self::getConfigDecorativeList();
+                if (!in_array($filename, $decorativeList, true)) {
+                    $decorativeList[] = $filename;
+                    rex_config::set('filepond_uploader', 'decorative_images', json_encode($decorativeList));
+                }
             }
 
             return [
@@ -456,8 +461,8 @@ class AltTextChecker
     public static function unmarkDecorative(string $filename): array
     {
         try {
-            $decorativeList = self::getDecorativeList();
-            $decorativeList = array_filter($decorativeList, static fn ($f) => $f !== $filename);
+            DecorativeField::set($filename, false);
+            $decorativeList = array_filter(self::getConfigDecorativeList(), static fn ($f) => $f !== $filename);
             rex_config::set('filepond_uploader', 'decorative_images', json_encode(array_values($decorativeList)));
 
             return [
@@ -481,11 +486,22 @@ class AltTextChecker
     }
 
     /**
-     * Holt die Liste der dekorativen Bilder.
+     * Holt die Liste der dekorativen Bilder: Metainfo-Checkbox med_alt_decorative (falls vorhanden)
+     * und die eigene Liste des Alt-Text-Checkers (Projekte ohne dieses Feld, ältere Markierungen).
      *
      * @return list<string>
      */
     public static function getDecorativeList(): array
+    {
+        return array_values(array_unique(array_merge(self::getConfigDecorativeList(), DecorativeField::filenames())));
+    }
+
+    /**
+     * Eigene Liste des Alt-Text-Checkers (rex_config).
+     *
+     * @return list<string>
+     */
+    private static function getConfigDecorativeList(): array
     {
         $json = rex_config::get('filepond_uploader', 'decorative_images', '[]');
         if (!is_string($json)) {

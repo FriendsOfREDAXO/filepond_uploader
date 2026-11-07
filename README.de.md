@@ -235,7 +235,7 @@ Ohne eigenen Prompt gilt das gewählte Prompt-Profil (barrierefrei, neutral, SEO
 
 - Statistik über Bilder mit und ohne Alt-Text
 - Alt-Texte direkt in der Liste eingeben, auch mehrsprachig; Enter speichert, „Alle speichern“ speichert alle Änderungen
-- Bilder als dekorativ markieren (zählen als erledigt)
+- Bilder als dekorativ markieren (zählen als erledigt); gibt es die MetaInfo-Checkbox `med_alt_decorative` (legt z. B. MediaPlace an), wird die Markierung dort gespeichert – Medienpool, MediaPlace und Frontend-Ausgaben sehen denselben Wert
 - Filter nach Dateiname und Kategorie, große Vorschau
 - KI-Vorschläge je Bild oder für alle sichtbaren Bilder
 
@@ -247,7 +247,8 @@ Der Dialog zeigt die MetaInfo-Felder des Medienpools, sortiert nach `title`, `me
 
 - `title`: optional Pflichtfeld (Einstellung oder `data-filepond-title-required`)
 - `med_title_lang`: immer Pflichtfeld
-- `med_alt`: bei Bildern standardmäßig Pflichtfeld, alternativ „dekoratives Bild“
+- `med_alt`: bei Bildern standardmäßig Pflichtfeld, alternativ „dekoratives Bild“. Die Checkbox steht am Alt-Feld (ein- und mehrsprachig); gibt es die MetaInfo-Checkbox `med_alt_decorative`, erscheint sie auch ohne Alt-Pflicht und der Wert wird dort gespeichert.
+- MetaInfo-Checkboxen mit einer Option erscheinen als Checkbox. Feldtypen, die der Dialog nicht bearbeiten kann (Medien-/Link-Widgets, Auswahllisten, Datum, JSON-Felder anderer AddOns wie MediaPlace' `med_json_data`), werden weder angezeigt noch geschrieben.
 
 Weitere Pflicht- und ausgeblendete Felder lassen sich unter Einstellungen → Metadaten festlegen.
 
