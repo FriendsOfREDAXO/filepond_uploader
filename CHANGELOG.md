@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.3 (2026-11-07)
+
+### 🐛 Fehlerbehebungen
+- **Upload-Dialog, Checkboxen**: Die allgemeine Eingabe-Regel des Dialogs (`width: 100%`) galt auch für Checkboxen – der Haken stand in einer eigenen Zeile über dem Text. Checkboxen haben jetzt ihre normale Größe.
+- **„Dekoratives Bild“** ist eine schlichte Zeile unter dem Alt-Feld statt eines gelben Kastens darüber.
+- **Abgeschaltetes Alt-Feld** (dekorativ) wird nur noch abgeblendet und behält die Farben des Themes; bisher bekam es im automatischen Dark Mode einen hellgrauen Hintergrund.
+
 ## 3.1.2 (2026-11-07)
 
 ### 🐛 Fehlerbehebungen

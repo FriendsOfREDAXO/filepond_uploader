@@ -755,10 +755,6 @@
                     html += `</label>`;
                     html += `<div style="margin-bottom:6px;">${getAiMagicButtonMarkup(field.name, isImage)}</div>`;
                     
-                    // Globale dekorative Checkbox für ALT-Felder bei Bildern
-                    if (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) {
-                        html += decorativeCheckboxHTML(existingMetadata, modalId);
-                    }
                     
                     // Tabs Container
                     html += `<div class="fp-tabs-container" style="border: 1px solid var(--modal-color-border, #ccc); border-radius: 4px; margin-top: 5px;">`;
@@ -798,7 +794,7 @@
                         } else if (field.name === 'med_alt' && isImage && altRequiredByDefault) {
                             langRequired = 'required';
                         }
-                        const langDisabled = (field.name === 'med_alt' && isImage && altRequiredByDefault) ? 'data-decorative-target="true"' : '';
+                        const langDisabled = (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) ? 'data-decorative-target="true"' : '';
                         
                         if (field.type === 'textarea') {
                             html += `<textarea class="simple-modal-input" name="${fieldName}[${langCode}]" `;
@@ -812,6 +808,11 @@
                     
                     html += `</div>`; // .fp-tabs-content
                     html += `</div>`; // .fp-tabs-container
+
+                    // Dekorative Checkbox unter dem Alt-Feld
+                    if (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) {
+                        html += decorativeCheckboxHTML(existingMetadata, modalId);
+                    }
                     html += `</div>`; // .simple-modal-form-group
 
                 } else {
@@ -826,11 +827,6 @@
                     html += `</label>`;
                     html += `<div style="margin-bottom:6px;">${getAiMagicButtonMarkup(field.name, isImage)}</div>`;
                     
-                    // Dekorative Checkbox auch beim einsprachigen Alt-Feld
-                    if (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) {
-                        html += decorativeCheckboxHTML(existingMetadata, modalId);
-                    }
-
                     const fieldValue = esc(existingMetadata?.[field.name] || '');
                     
                     // Required-Attribut für verschiedene Felder
@@ -847,7 +843,7 @@
                         isRequired = 'required';
                     }
                     
-                    const isDisabled = (field.name === 'med_alt' && isImage && altRequiredByDefault) ? 'data-decorative-target="true"' : '';
+                    const isDisabled = (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) ? 'data-decorative-target="true"' : '';
                     
                     if (field.type === 'textarea') {
                         html += `<textarea id="${fieldId}" name="${fieldName}" class="simple-modal-input" `;
@@ -856,7 +852,12 @@
                         html += `<input type="text" id="${fieldId}" name="${fieldName}" class="simple-modal-input" `;
                         html += `data-field="${fieldName}" value="${fieldValue}" ${isRequired} ${isDisabled}>`;
                     }
-                    
+
+                    // Dekorative Checkbox unter dem einsprachigen Alt-Feld
+                    if (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) {
+                        html += decorativeCheckboxHTML(existingMetadata, modalId);
+                    }
+
                     html += `</div>`;
                 }
                 

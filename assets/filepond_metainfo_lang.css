@@ -58,57 +58,32 @@
     font-size: 11px;
 }
 
-/* Dekorative Bild-Optionen */
+/* Checkboxen im Dialog (Dekoratives Bild, MetaInfo-Checkboxen): schlichte Zeile, Farben aus dem Modal-Theme */
 .simple-modal .decorative-checkbox-group {
-    margin-bottom: 12px;
+    margin: 8px 0 0;
 }
 
 .simple-modal .simple-modal-checkbox-label {
-    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 14px;
     font-weight: normal;
-    margin: 0 0 8px 0;
-    display: block;
-    cursor: pointer;
     color: var(--modal-color-text);
-    padding: 8px 12px;
-    background: rgba(255, 193, 7, 0.08);
-    border: 1px solid rgba(255, 193, 7, 0.2);
-    border-radius: 4px;
-    transition: background-color 0.2s ease;
-}
-
-.simple-modal .simple-modal-checkbox-label:hover {
-    background: rgba(255, 193, 7, 0.12);
+    cursor: pointer;
 }
 
 .simple-modal .simple-modal-checkbox-label input[type="checkbox"] {
-    margin-right: 8px;
-    margin-top: 0;
-    margin-bottom: 0;
+    width: 16px;
+    height: 16px;
+    flex: none;
 }
 
-.simple-modal input[data-decorative-target="true"]:disabled {
-    background-color: #f5f5f5;
-    color: #999;
-    opacity: 0.5;
-}
-
-.rex-theme-dark .simple-modal input[data-decorative-target="true"]:disabled,
-.simple-modal-mp-dark input[data-decorative-target="true"]:disabled {
-    background-color: #333;
-    color: #666;
-    opacity: 0.5;
-}
-
-.rex-theme-dark .simple-modal .simple-modal-checkbox-label,
-.simple-modal-mp-dark .simple-modal-checkbox-label {
-    background: rgba(255, 193, 7, 0.1);
-    border-color: rgba(255, 193, 7, 0.3);
-}
-
-.rex-theme-dark .simple-modal .simple-modal-checkbox-label:hover,
-.simple-modal-mp-dark .simple-modal-checkbox-label:hover {
-    background: rgba(255, 193, 7, 0.15);
+/* Alt-Feld bei „dekorativ“: nur abgeblendet, Farben bleiben die des Themes (hell/dunkel/automatisch) */
+.simple-modal [data-decorative-target="true"]:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 /* Fehlervalidierung für Pflichtfelder */
