@@ -183,7 +183,7 @@ class SimpleModal {
                     object-fit: contain;
                 }
 
-                .simple-modal input,
+                .simple-modal input:not([type="checkbox"]):not([type="radio"]),
                 .simple-modal textarea {
                     width: 100%;
                     padding: 8px;
@@ -196,6 +196,13 @@ class SimpleModal {
                 .simple-modal textarea {
                     resize: vertical;
                     min-height: 80px;
+                }
+
+                .simple-modal input[type="checkbox"],
+                .simple-modal input[type="radio"] {
+                    width: auto;
+                    margin: 0;
+                    accent-color: var(--modal-color-primary);
                 }
 
                 .simple-modal input:focus,
