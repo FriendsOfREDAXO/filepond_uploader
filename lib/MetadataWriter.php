@@ -25,7 +25,10 @@ final class MetadataWriter
     private const ALIASES = ['alt' => 'med_alt', 'copyright' => 'med_copyright'];
 
     /** Felder, die Frontend-Uploads immer setzen dürfen (sofern vorhanden und nicht ausgeblendet). */
-    private const FRONTEND_FIELDS = ['title', 'med_alt', 'med_copyright', 'med_description'];
+    private const FRONTEND_FIELDS = ['title', 'med_alt', DecorativeField::NAME, 'med_copyright', 'med_description'];
+
+    /** Metainfo-Typen, die der Dialog bearbeiten kann (mehrsprachige Text-Typen von metainfo_lang_fields kommen dazu). */
+    private const SUPPORTED_TYPES = ['text', 'textarea', 'checkbox'];
 
     /** Größte Länge eines Werts aus dem Upload-Dialog. */
     private const MAX_VALUE_LENGTH = 5000;
@@ -46,7 +49,9 @@ final class MetadataWriter
             }
         }
 
-        $decorative = true === ($metadata['decorative'] ?? false);
+        // „Dekorativ“: Schalter des Dialogs oder die Metainfo-Checkbox selbst
+        $decorative = true === ($metadata['decorative'] ?? false)
+            || (array_key_exists(DecorativeField::NAME, $metadata) && DecorativeField::isOn($metadata[DecorativeField::NAME]));
         $columns = $frontend ? self::frontendColumns() : self::writableColumns();
 
         $sql = rex_sql::factory();
@@ -61,12 +66,26 @@ final class MetadataWriter
             if ($decorative && 'med_alt' === $field) {
                 continue;
             }
-            $sql->setValue($field, is_array($value) ? self::toLangJson($value) : self::clean($value));
+            if (DecorativeField::NAME === $field) {
+                continue; // wird unten aus $decorative gesetzt
+            }
+            if (in_array($field, self::checkboxColumns(), true)) {
+                $sql->setValue($field, MetainfoCheckbox::normalize($field, $value));
+            } else {
+                $sql->setValue($field, is_array($value) ? self::toLangJson($value) : self::clean($value));
+            }
             $hasValues = true;
         }
 
         if ($decorative && in_array('med_alt', $columns, true)) {
             $sql->setValue('med_alt', '');
+            $hasValues = true;
+        }
+
+        // Metainfo-Checkbox med_alt_decorative mitführen, wenn der Dialog den Zustand übermittelt hat
+        if (in_array(DecorativeField::NAME, $columns, true)
+            && ($decorative || array_key_exists('decorative', $metadata) || array_key_exists(DecorativeField::NAME, $metadata))) {
+            $sql->setValue(DecorativeField::NAME, DecorativeField::value($decorative));
             $hasValues = true;
         }
 
@@ -128,9 +147,12 @@ final class MetadataWriter
         $candidates = ['title'];
         if (rex_addon::get('metainfo')->isAvailable()) {
             $sql = rex_sql::factory();
-            $sql->setQuery('SELECT name FROM ' . rex::getTable('metainfo_field') . ' WHERE name LIKE "med\\_%"');
+            $sql->setQuery('SELECT mf.name, mt.label AS type_label FROM ' . rex::getTable('metainfo_field') . ' mf LEFT JOIN ' . rex::getTable('metainfo_type') . ' mt ON mf.type_id = mt.id WHERE mf.name LIKE "med\\_%"');
             foreach ($sql as $row) {
-                $candidates[] = (string) $row->getValue('name');
+                $name = (string) $row->getValue('name');
+                if (self::isSupportedField($name, (string) ($row->getValue('type_label') ?? ''))) {
+                    $candidates[] = $name;
+                }
             }
         } else {
             $candidates = array_merge($candidates, ['med_alt', 'med_copyright', 'med_description']);
@@ -141,6 +163,53 @@ final class MetadataWriter
             $candidates,
             static fn (string $name): bool => in_array($name, $existing, true) && !in_array($name, $excluded, true),
         )));
+
+        return $columns;
+    }
+
+    /**
+     * Kann der Dialog Felder dieses Metainfo-Typs bearbeiten? Text, Textarea, Checkbox und die
+     * mehrsprachigen Text-Typen; Medien-/Link-Widgets, Auswahllisten, Datum, Fokuspunkt oder
+     * JSON-Felder anderer AddOns (z. B. MediaPlace) bleiben unberührt.
+     */
+    public static function isSupportedType(string $typeLabel): bool
+    {
+        $label = strtolower(trim($typeLabel));
+
+        return '' === $label || in_array($label, self::SUPPORTED_TYPES, true) || str_starts_with($label, 'lang_text');
+    }
+
+    /**
+     * Unterstützter Typ; Checkboxen nur mit einer Option (siehe MetainfoCheckbox).
+     */
+    public static function isSupportedField(string $name, string $typeLabel): bool
+    {
+        if (!self::isSupportedType($typeLabel)) {
+            return false;
+        }
+
+        return 'checkbox' !== strtolower(trim($typeLabel)) || null !== MetainfoCheckbox::onValue($name);
+    }
+
+    /**
+     * Metainfo-Checkboxen unter den beschreibbaren Spalten.
+     *
+     * @return list<string>
+     */
+    private static function checkboxColumns(): array
+    {
+        static $columns = null;
+        if (null !== $columns) {
+            return $columns;
+        }
+        $columns = [];
+        if (rex_addon::get('metainfo')->isAvailable()) {
+            $sql = rex_sql::factory();
+            $sql->setQuery('SELECT mf.name FROM ' . rex::getTable('metainfo_field') . ' mf JOIN ' . rex::getTable('metainfo_type') . ' mt ON mf.type_id = mt.id WHERE mf.name LIKE "med\\_%" AND mt.label = "checkbox"');
+            foreach ($sql as $row) {
+                $columns[] = (string) $row->getValue('name');
+            }
+        }
 
         return $columns;
     }
