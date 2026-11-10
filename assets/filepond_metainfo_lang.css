@@ -104,6 +104,17 @@
     color: #ff6b6b;
 }
 
+/* Pflichtfeld-Markierung am Label */
+.simple-modal .simple-modal-required {
+    color: #dc3545;
+    margin-left: 2px;
+}
+
+.rex-theme-dark .simple-modal .simple-modal-required,
+.simple-modal-mp-dark .simple-modal-required {
+    color: #ff6b6b;
+}
+
 /* Media Widget Integration Styles */
 .media-upload-result {
     transition: background-color 0.3s ease;

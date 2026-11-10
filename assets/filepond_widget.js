@@ -564,6 +564,16 @@
             };
             // Checkbox „Dekoratives Bild“ am Alt-Feld: wenn Alt-Text Pflicht ist oder das Metainfo-Feld existiert
             const showDecorativeCheckbox = (isImage) => isImage && (altRequiredByDefault || dialogFieldNames.includes(DECORATIVE_FIELD));
+            // Pflichtfeld nach denselben Regeln wie in validateEnhancedMetadata(), damit der
+            // Dialog kennzeichnet, woran „Speichern“ scheitern kann (auch Felder aus
+            // „required_metadata_fields“, z. B. med_copyright)
+            const isDialogFieldRequired = (field, isImage, widget) => {
+                if (field.name === 'med_title_lang') return true;
+                if (field.name === 'title') return widget?.getAttribute('data-filepond-title-required') === 'true';
+                if (field.name === 'med_alt') return Boolean(isImage && altRequiredByDefault);
+                return Boolean(field.required);
+            };
+            const requiredMarker = (required) => required ? ' <span class="simple-modal-required" aria-hidden="true">*</span>' : '';
             const decorativeCheckboxHTML = (existingMetadata, modalId) => {
                 const checkboxId = `decorative_global_${esc(modalId || 'dialog')}`;
                 const checked = isCheckedValue(existingMetadata?.[DECORATIVE_FIELD]) ? ' checked' : '';
@@ -745,13 +755,14 @@
                 
                 // Übersetztes Label verwenden
                 const translatedLabel = esc(getFieldTranslation(field.name) || field.label);
-                
+                const fieldRequired = isDialogFieldRequired(field, isImage, widget);
+
                 if (field.multilingual && field.languages && field.languages.length > 0) {
                     // Mehrsprachiges Feld mit Tabs
                     
                     html += `<div class="simple-modal-form-group" data-field="${fieldName}">`;
                     html += `<label class="simple-modal-label">`;
-                    html += `<i class="fa fa-globe"></i> ${translatedLabel}`;
+                    html += `<i class="fa fa-globe"></i> ${translatedLabel}${requiredMarker(fieldRequired)}`;
                     html += `</label>`;
                     html += `<div style="margin-bottom:6px;">${getAiMagicButtonMarkup(field.name, isImage)}</div>`;
                     
@@ -787,13 +798,7 @@
                         
                         html += `<div class="fp-tab-pane" id="tab_${uniqueFieldId}_${langCode}" style="display: ${displayStyle};">`;
                         
-                        // Required-Attribut Logic
-                        let langRequired = '';
-                        if (field.name === 'med_title_lang') {
-                            langRequired = 'required'; 
-                        } else if (field.name === 'med_alt' && isImage && altRequiredByDefault) {
-                            langRequired = 'required';
-                        }
+                        const langRequired = fieldRequired ? 'required' : '';
                         const langDisabled = (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) ? 'data-decorative-target="true"' : '';
                         
                         if (field.type === 'textarea') {
@@ -818,7 +823,7 @@
                 } else {
                     // Standard-Feld
                     html += `<div class="simple-modal-form-group" data-field="${fieldName}">`;
-                    html += `<label for="${fieldId}" class="simple-modal-label">${translatedLabel}`;
+                    html += `<label for="${fieldId}" class="simple-modal-label">${translatedLabel}${requiredMarker(fieldRequired)}`;
                     
                     if (field.name === 'title') {
                         html += ` <small class="text-muted">${esc(t.titleInternalHint)}</small>`;
@@ -829,19 +834,7 @@
                     
                     const fieldValue = esc(existingMetadata?.[field.name] || '');
                     
-                    // Required-Attribut für verschiedene Felder
-                    let isRequired = '';
-                    if (field.name === 'med_title_lang') {
-                        isRequired = 'required'; // Mehrsprachige Titel sind immer required
-                    } else if (field.name === 'title') {
-                        // Einfaches title Feld - basierend auf data-Attribut
-                        const titleRequiredAttr = widget?.getAttribute('data-filepond-title-required');
-                        if (titleRequiredAttr === 'true') {
-                            isRequired = 'required';
-                        }
-                    } else if (field.name === 'med_alt' && isImage && altRequiredByDefault) {
-                        isRequired = 'required';
-                    }
+                    const isRequired = fieldRequired ? 'required' : '';
                     
                     const isDisabled = (field.name === 'med_alt' && showDecorativeCheckbox(isImage)) ? 'data-decorative-target="true"' : '';
                     
