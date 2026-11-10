@@ -1660,7 +1660,9 @@
 
                             // Meta-Dialog nur anzeigen wenn nicht übersprungen
                             if (!skipMeta) {
-                                fileMetadata = await createMetadataDialog(file, null, originalFileName);
+                                // Nach einem gescheiterten Upload (Wiederholen, erneutes Absenden bei delayed_upload 2)
+                                // die schon eingegebenen Metadaten vorbelegen statt einen leeren Dialog zu zeigen
+                                fileMetadata = await createMetadataDialog(file, file.metaInfo || null, originalFileName);
                             } else {
                                 // Standard-Metadaten wenn übersprungen
                                 fileMetadata = {
